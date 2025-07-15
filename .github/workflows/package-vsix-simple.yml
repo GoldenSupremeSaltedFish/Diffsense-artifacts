@@ -1,0 +1,57 @@
+name: Package VSIX (Simple)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-vsix:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check if dist directory exists
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "❌ dist 目录不存在，无法打包"
+            exit 1
+          fi
+          echo "✅ 构建产物目录存在"
+
+      - name: Package VSIX
+        run: npx vsce package --no-yarn
+
+      - name: List generated files
+        run: ls -la *.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diffsense-vsix-${{ github.sha }}
+          path: "*.vsix"
+          retention-days: 30
+
+      - name: 📋 Usage Instructions
+        run: |
+          echo "🎉 VSIX 打包成功！"
+          echo ""
+          echo "📦 获取方法："
+          echo "1. 访问 Actions 页面"
+          echo "2. 点击当前工作流"
+          echo "3. 在 Artifacts 区域下载 'diffsense-vsix-xxx'"
+          echo ""
+          echo "💡 安装方法："
+          echo "code --install-extension diffsense-*.vsix" 

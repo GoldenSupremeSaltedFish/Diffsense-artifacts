@@ -34,11 +34,82 @@ jobs:
           fi
           echo "✅ 构建产物目录存在"
 
+      - name: Check required directories before packaging
+        run: |
+          echo "🔍 验证所有产物目录是否存在..."
+          
+          # 检查必需的目录和文件
+          REQUIRED_DIRS=("dist" "analyzers" "ui")
+          REQUIRED_FILES=("runtime-config.json" "icon.png" "LICENSE.txt")
+          
+          for dir in "${REQUIRED_DIRS[@]}"; do
+            if [ ! -d "$dir" ]; then
+              echo "❌ 缺少目录: $dir"
+              exit 1
+            else
+              echo "✅ 目录存在: $dir"
+              # 显示目录内容摘要
+              echo "   文件数量: $(find $dir -type f | wc -l)"
+              echo "   总大小: $(du -sh $dir | cut -f1)"
+            fi
+          done
+          
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ 缺少文件: $file"
+              exit 1
+            else
+              echo "✅ 文件存在: $file ($(du -sh $file | cut -f1))"
+            fi
+          done
+
       - name: Package VSIX
         run: npx vsce package --no-yarn
 
-      - name: List generated files
-        run: ls -la *.vsix
+      - name: Verify VSIX package contents
+        run: |
+          echo "📦 VSIX 包信息:"
+          ls -la *.vsix
+          
+          # 解压并检查VSIX内容
+          VSIX_FILE=$(ls *.vsix)
+          echo "📋 解压 $VSIX_FILE 检查内容..."
+          
+          # 创建临时目录解压
+          mkdir -p vsix-check
+          cd vsix-check
+          unzip -q "../$VSIX_FILE"
+          
+          echo "🔍 VSIX 包含的目录和文件:"
+          find . -type d | head -20
+          echo ""
+          echo "📊 主要产物检查:"
+          
+          # 检查关键产物是否存在
+          echo -n "extension/ 目录: "
+          [ -d "extension" ] && echo "✅ 存在" || echo "❌ 缺失"
+          
+          echo -n "extension/dist/ 目录: "
+          [ -d "extension/dist" ] && echo "✅ 存在 ($(find extension/dist -type f | wc -l) 文件)" || echo "❌ 缺失"
+          
+          echo -n "extension/analyzers/ 目录: "
+          [ -d "extension/analyzers" ] && echo "✅ 存在 ($(find extension/analyzers -type f | wc -l) 文件)" || echo "❌ 缺失"
+          
+          echo -n "extension/ui/ 目录: "
+          [ -d "extension/ui" ] && echo "✅ 存在 ($(find extension/ui -type f | wc -l) 文件)" || echo "❌ 缺失"
+          
+          echo -n "extension/runtime-config.json: "
+          [ -f "extension/runtime-config.json" ] && echo "✅ 存在" || echo "❌ 缺失"
+          
+          echo -n "extension/icon.png: "
+          [ -f "extension/icon.png" ] && echo "✅ 存在" || echo "❌ 缺失"
+          
+          # 显示VSIX总大小
+          cd ..
+          echo "📏 VSIX 包总大小: $(du -sh $VSIX_FILE | cut -f1)"
+          
+          # 清理
+          rm -rf vsix-check
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4

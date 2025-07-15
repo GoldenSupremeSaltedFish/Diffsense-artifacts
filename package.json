@@ -34,6 +34,15 @@
     "Testing",
     "Visualization"
   ],
+  "files": [
+    "dist/**/*",
+    "analyzers/**/*",
+    "ui/**/*",
+    "runtime-config.json",
+    "icon.png",
+    "LICENSE.txt",
+    "README.md"
+  ],
   "activationEvents": [],
   "main": "dist/extension.js",
   "icon": "icon.png",
