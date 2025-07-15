@@ -10,6 +10,9 @@ on:
 jobs:
   build-vsix:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 允许创建 Release
+      packages: read   # 允许读取包
     
     steps:
       - name: Checkout repository
