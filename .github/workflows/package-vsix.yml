@@ -1,0 +1,68 @@
+name: Package VSIX
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-vsix:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check if dist directory exists
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "❌ dist 目录不存在，无法打包"
+            exit 1
+          fi
+          echo "✅ 构建产物目录存在"
+
+      - name: Package VSIX
+        run: npx vsce package --no-yarn
+
+      - name: List generated files
+        run: ls -la *.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: diffsense-vsix-${{ github.sha }}
+          path: "*.vsix"
+          retention-days: 30
+
+      - name: Upload VSIX to release (on main branch)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: DiffSense v${{ github.run_number }}
+          body: |
+            🚀 自动构建的 DiffSense VSIX 包
+            
+            📦 **安装方法:**
+            1. 下载 `.vsix` 文件
+            2. 在 VSCode 中运行: `code --install-extension diffsense-*.vsix`
+            3. 或通过 VSCode 插件管理器安装本地 VSIX
+            
+            🔄 **提交信息:** ${{ github.event.head_commit.message }}
+            📅 **构建时间:** ${{ github.run_id }}
+          files: "*.vsix"
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
