@@ -1,0 +1,14 @@
+{
+  "version": "0.1.14",
+  "buildTime": "2025-07-15T12:22:26Z",
+  "commit": "f39af7491627d3abeb155bbb8b324efb70abfe0c",
+  "isProduction": true,
+  "debugMode": true,
+  "artifactsOnly": true,
+  "buildInfo": {
+    "javaAnalyzer": "2 JAR files",
+    "nodeAnalyzer": "7 JS files",
+    "golangAnalyzer": "1 JS files",
+    "frontend": "0 files"
+  }
+}
