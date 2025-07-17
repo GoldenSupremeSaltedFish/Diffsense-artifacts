@@ -37,6 +37,8 @@
   "files": [
     "dist/**/*",
     "analyzers/**/*",
+    "analyzers/node-analyzer/node_modules/**/*",
+    "analyzers/golang-analyzer/node_modules/**/*",
     "ui/**/*",
     "runtime-config.json",
     "icon.png",

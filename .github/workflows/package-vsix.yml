@@ -26,6 +26,24 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install node-analyzer dependencies
+        run: |
+          echo "📦 安装 node-analyzer 依赖..."
+          cd analyzers/node-analyzer
+          npm install
+          echo "✅ node-analyzer 依赖安装完成"
+          echo "📊 node_modules 大小: $(du -sh node_modules | cut -f1)"
+          cd ../../
+
+      - name: Install golang-analyzer dependencies
+        run: |
+          echo "📦 安装 golang-analyzer 依赖..."
+          cd analyzers/golang-analyzer
+          npm install
+          echo "✅ golang-analyzer 依赖安装完成"
+          echo "📊 node_modules 大小: $(du -sh node_modules | cut -f1)"
+          cd ../../
+
       - name: Check if dist directory exists
         run: |
           if [ ! -d "dist" ]; then
@@ -62,6 +80,23 @@ jobs:
               echo "✅ 文件存在: $file ($(du -sh $file | cut -f1))"
             fi
           done
+          
+          # 检查 node_modules 是否安装成功
+          echo "🔍 验证 node_modules 依赖..."
+          
+          if [ ! -d "analyzers/node-analyzer/node_modules" ]; then
+            echo "❌ node-analyzer node_modules 不存在"
+            exit 1
+          else
+            echo "✅ node-analyzer node_modules 存在 ($(du -sh analyzers/node-analyzer/node_modules | cut -f1))"
+          fi
+          
+          if [ ! -d "analyzers/golang-analyzer/node_modules" ]; then
+            echo "❌ golang-analyzer node_modules 不存在"
+            exit 1
+          else
+            echo "✅ golang-analyzer node_modules 存在 ($(du -sh analyzers/golang-analyzer/node_modules | cut -f1))"
+          fi
 
       - name: Package VSIX
         run: npx vsce package --no-yarn
@@ -94,6 +129,12 @@ jobs:
           
           echo -n "extension/analyzers/ 目录: "
           [ -d "extension/analyzers" ] && echo "✅ 存在 ($(find extension/analyzers -type f | wc -l) 文件)" || echo "❌ 缺失"
+          
+          echo -n "extension/analyzers/node-analyzer/node_modules: "
+          [ -d "extension/analyzers/node-analyzer/node_modules" ] && echo "✅ 存在 ($(find extension/analyzers/node-analyzer/node_modules -type f | wc -l) 文件)" || echo "❌ 缺失"
+          
+          echo -n "extension/analyzers/golang-analyzer/node_modules: "
+          [ -d "extension/analyzers/golang-analyzer/node_modules" ] && echo "✅ 存在 ($(find extension/analyzers/golang-analyzer/node_modules -type f | wc -l) 文件)" || echo "❌ 缺失"
           
           echo -n "extension/ui/ 目录: "
           [ -d "extension/ui" ] && echo "✅ 存在 ($(find extension/ui -type f | wc -l) 文件)" || echo "❌ 缺失"
