@@ -1,88 +1,173 @@
-# DiffSense 子仓库自动 VSIX 打包方案
+# DiffSense
 
-## 📦 方案概述
+**DiffSense** is a powerful code change impact analysis tool provided as a VSCode extension. It helps developers quickly understand the scope and risk of code changes through static code analysis and version difference comparison.
 
-这个仓库（Diffsense-artifacts）是一个**产物仓库**，专门用于存放从主仓库构建而来的可执行文件和资源。我们在这里实现了自动 VSIX 打包功能。
+[![Version](https://img.shields.io/badge/version-0.1.12-blue.svg)](https://github.com/GoldenSupremeSaltedFish/DiffSense)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](./LICENSE.txt)
+[![VSCode](https://img.shields.io/badge/VSCode-1.74.0+-blueviolet.svg)](https://code.visualstudio.com/)
+[![Marketplace](https://img.shields.io/badge/Marketplace-DiffSense-orange.svg)](https://marketplace.visualstudio.com/items?itemName=humphreyLi.diffsense)
 
-## 🔄 工作流程
+## ✨ Key Features
 
-### 1. 主仓库 → 子仓库
-- 主仓库构建源码，生成产物
-- 产物自动推送到子仓库（Diffsense-artifacts）
+- 🔍 **Multi-language Support**
+  - Java backend analysis (Spring Boot, Maven/Gradle projects)
+  - Golang backend analysis
+  - TypeScript/JavaScript frontend analysis (React, Vue)
+  - Full-stack project comprehensive analysis
 
-### 2. 子仓库自动打包
-- 当子仓库收到新的产物推送时
-- GitHub Actions 自动触发 VSIX 打包流程
-- 生成可安装的 VSCode 插件包
+- 🎯 **Precise Analysis**
+  - Method-level impact analysis
+  - Class-level change tracking
+  - Call chain visualization
+  - Frontend component dependency analysis
+  - API interface change impact assessment
 
-## 🚀 自动化功能
+- 🌈 **Smart Interface**
+  - Automatic VSCode theme adaptation
+  - Intuitive analysis result display
+  - Interactive call relationship graph
+  - Multi-language interface (Chinese/English)
+  - Risk level color coding
 
-### 触发条件
-- ✅ 推送到 `main` 分支
-- ✅ 提交 Pull Request  
-- ✅ 手动触发（`workflow_dispatch`）
+- 📊 **Rich Reports**
+  - JSON/HTML format export
+  - Detailed change classification reports
+  - CI/CD pipeline support
+  - Historical change trend analysis
 
-### 打包流程
-1. **环境准备**: 安装 Node.js 18 和依赖
-2. **产物检查**: 验证 `dist` 目录是否存在
-3. **VSIX 打包**: 使用 `vsce package` 命令
-4. **文件上传**: 将 VSIX 作为 Artifacts 上传
-5. **自动发布**: 在 main 分支推送时自动创建 Release
+## 🚀 Quick Start
 
-## 📋 使用方法
+### Installation
 
-### 获取 VSIX 包
+#### Option 1: Install from VSCode Marketplace (Recommended)
+1. Open VSCode
+2. Press `Ctrl+P` (or `Cmd+P` on Mac) to open Quick Open
+3. Type: `ext install humphreyLi.diffsense`
+4. Press Enter to install
 
-#### 方法 1: 从 Artifacts 下载
-1. 访问 [Actions 页面](../../actions)
-2. 点击最新的 "Package VSIX" 工作流
-3. 在 Artifacts 区域下载 `diffsense-vsix-xxx`
+#### Option 2: Install from Extensions Panel
+1. Open VSCode
+2. Go to Extensions panel (`Ctrl+Shift+X`)
+3. Search for "DiffSense"
+4. Click Install
 
-#### 方法 2: 从 Releases 下载
-1. 访问 [Releases 页面](../../releases)
-2. 下载最新版本的 `.vsix` 文件
+#### Option 3: Install from VSIX File
+1. Download the latest VSIX file from [Releases](https://github.com/GoldenSupremeSaltedFish/DiffSense/releases)
+2. In VSCode, go to Extensions panel
+3. Click the "..." menu and select "Install from VSIX..."
+4. Choose the downloaded VSIX file
 
-### 安装插件
+### Usage
+1. Open any Git repository project
+2. Find the DiffSense icon in VSCode sidebar
+3. Select commit range or branch to analyze
+4. Choose analysis type (method/class/full-stack)
+5. Click "Start Analysis" button
+6. View analysis results and visualization charts
 
-```bash
-# 命令行安装
-code --install-extension diffsense-x.x.x.vsix
+## 💡 Analysis Modes
 
-# 或在 VSCode 中
-# 1. Ctrl+Shift+P 打开命令面板
-# 2. 输入 "Extensions: Install from VSIX"
-# 3. 选择下载的 .vsix 文件
+### Backend Code Analysis
+- **A1-Business Logic Changes**: Controller/Service processing logic modifications
+- **A2-Interface Changes**: API method signatures, parameters, return value structure changes
+- **A3-Data Structure Changes**: Entity/DTO/Database schema changes
+- **A4-Middleware Adjustments**: Framework upgrades, configuration files, connection pool parameter adjustments
+- **A5-Non-functional Modifications**: Comments, logging, code formatting, performance optimizations
+
+### Frontend Code Analysis
+- **Component Dependency Analysis**: Identify dependencies between React/Vue components
+- **Props/State Changes**: Track component interface changes
+- **Hook Usage Analysis**: useEffect, useState and other Hook dependency changes
+- **Routing Impact**: Impact scope of page route changes
+
+### Full-stack Analysis
+- **API Contract Changes**: Frontend-backend interface contract consistency check
+- **Data Flow Tracking**: Complete data flow analysis from frontend to backend
+- **Microservice Dependencies**: Cross-service call impact analysis
+
+## 📝 Supported Project Types
+
+### Java Projects
+- Spring Boot applications
+- Maven/Gradle build systems
+- JDK 8+ support
+- Microservice architecture support
+
+### Golang Projects
+- Go Module projects
+- Gin/Echo and other web frameworks
+- Go 1.16+ support
+
+### Frontend Projects
+- React 16+ projects
+- Vue 2/3 projects
+- TypeScript/JavaScript
+- Webpack/Vite build tools
+
+## 🛠️ System Requirements
+
+- **VSCode**: 1.74.0 or higher
+- **Git**: 2.20.0 or higher
+- **Java Projects**: JDK 8+, Maven 3.6+ or Gradle 6+
+- **Golang Projects**: Go 1.16+
+- **Frontend Projects**: Node.js 14+
+
+## 📁 Project Structure
+
+```
+DiffSense/
+├── plugin/                    # VSCode extension core
+├── ui/                       # Frontend UI components
+├── src/main/java/           # Java backend analyzer
+├── technical_documentation/ # Technical documentation
+└── build-tools/            # Build tools
 ```
 
-## 🛠️ 配置文件说明
+## 🔧 Development & Building
 
-### `.github/workflows/package-vsix.yml`
-自动化工作流配置，包含：
-- Node.js 环境设置
-- 依赖安装
-- VSIX 打包
-- 文件上传和发布
+### Local Development
+```bash
+# Clone the project
+git clone https://github.com/GoldenSupremeSaltedFish/DiffSense.git
+cd DiffSense
 
-### `package.json`
-VSCode 插件元数据，包含：
-- 插件基本信息
-- 依赖配置
-- 构建脚本
+# Build all components
+./build-all.bat
 
-## 🔧 优势
+# Check build results
+./check-build.bat
+```
 
-1. **主仓库解耦**: 主仓库专注源码开发，子仓库专注产物分发
-2. **自动化流程**: 无需手动打包，推送即自动生成 VSIX
-3. **多获取方式**: 既有 Artifacts 也有 Releases，满足不同需求
-4. **调试友好**: 子仓库产物可直接用于调试和测试
+### Package & Release
+```bash
+# Package VSCode extension
+cd plugin
+npm run package
+```
 
-## 📝 注意事项
+## 🤝 Contributing
 
-- 子仓库**不存储** `node_modules`，CI 时自动安装
-- 确保 `dist` 目录包含完整的构建产物
-- VSIX 包版本号来自 `package.json` 的 `version` 字段
-- Release 标签使用 GitHub run number 保证唯一性
+1. Fork the project to your GitHub
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Create a Pull Request
+
+## 📄 License
+
+This project is licensed under the Apache-2.0 License - see the [LICENSE](LICENSE.txt) file for details.
+
+## 🌟 Acknowledgments
+
+Thanks to all developers and users who have contributed to DiffSense!
+
+## 📞 Support & Feedback
+
+- 🐛 [Report Issues](https://github.com/GoldenSupremeSaltedFish/DiffSense/issues)
+- 💡 [Feature Requests](https://github.com/GoldenSupremeSaltedFish/DiffSense/discussions)
+- 📚 [Technical Documentation](./technical_documentation/)
+- 🛒 [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=humphreyLi.diffsense)
 
 ---
 
-🎯 **这种方案实现了产物仓库的"自给自足"，让 VSIX 分发更加便捷和自动化！** 
+**English** | [中文版](./cn_readme.md)

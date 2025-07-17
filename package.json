@@ -41,7 +41,7 @@
     "runtime-config.json",
     "icon.png",
     "LICENSE.txt",
-    "README.md"
+    "VSIX-AUTOMATION.md"
   ],
   "activationEvents": [],
   "main": "dist/extension.js",
