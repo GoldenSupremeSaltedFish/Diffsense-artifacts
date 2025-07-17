@@ -99,7 +99,7 @@ jobs:
           fi
 
       - name: Package VSIX
-        run: npx vsce package --no-yarn
+        run: npx vsce package --no-yarn --allow-unused-files-patterns
 
       - name: Verify VSIX package contents
         run: |
