@@ -1,14 +1,16 @@
 {
-  "version": "0.1.14",
-  "buildTime": "2025-07-15T12:22:26Z",
-  "commit": "f39af7491627d3abeb155bbb8b324efb70abfe0c",
+  "version": "0.1.15",
+  "buildTime": "2025-07-20T02:20:51Z",
+  "commit": "8876813ff4ab12f315ff802a7248fa9474390e22",
+  "branch": "main",
   "isProduction": true,
-  "debugMode": true,
+  "debugMode": false,
   "artifactsOnly": true,
   "buildInfo": {
     "javaAnalyzer": "2 JAR files",
-    "nodeAnalyzer": "7 JS files",
+    "nodeAnalyzer": "9 JS files",
     "golangAnalyzer": "1 JS files",
-    "frontend": "0 files"
+    "frontend": "0 files",
+    "vsix": "1 files"
   }
 }
