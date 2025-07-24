@@ -1214,8 +1214,52 @@ class DiffSenseViewProvider {
                 reject(new Error(`前端分析器文件不存在: ${analyzerPath}`));
                 return;
             }
-            // 构建分析命令参数
+            // 构建分析命令参数 - 添加Git变更参数
             const analyzerArgs = [analyzerPath, targetDir, 'json'];
+            // 添加Git变更分析参数（与Java分析器保持一致）
+            const branch = analysisData.branch || 'master';
+            analyzerArgs.push('--branch', branch);
+            // 处理范围参数
+            if (analysisData.range) {
+                const range = analysisData.range;
+                if (range === 'Last 3 commits') {
+                    analyzerArgs.push('--commits', '3');
+                }
+                else if (range === 'Last 5 commits') {
+                    analyzerArgs.push('--commits', '5');
+                }
+                else if (range === 'Last 10 commits') {
+                    analyzerArgs.push('--commits', '10');
+                }
+                else if (range === 'Today') {
+                    const today = new Date().toISOString().split('T')[0];
+                    analyzerArgs.push('--since', today);
+                }
+                else if (range === 'This week') {
+                    const now = new Date();
+                    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+                    const weekStart = startOfWeek.toISOString().split('T')[0];
+                    analyzerArgs.push('--since', weekStart);
+                }
+                else if (range === 'Custom Date Range') {
+                    if (analysisData.dateFrom) {
+                        analyzerArgs.push('--since', analysisData.dateFrom);
+                        if (analysisData.dateTo) {
+                            analyzerArgs.push('--until', analysisData.dateTo);
+                        }
+                    }
+                }
+                else if (range === 'Commit ID Range') {
+                    if (analysisData.startCommit && analysisData.endCommit) {
+                        analyzerArgs.push('--start-commit', analysisData.startCommit);
+                        analyzerArgs.push('--end-commit', analysisData.endCommit);
+                    }
+                }
+            }
+            else {
+                // 默认分析最近3个提交
+                analyzerArgs.push('--commits', '3');
+            }
             // 添加微服务检测选项
             analyzerArgs.push('--enable-microservice-detection', 'true', '--enable-build-tool-detection', 'true', '--enable-framework-detection', 'true', '--max-depth', '20');
             console.log('执行前端分析命令:', 'node', analyzerArgs.join(' '));
@@ -1260,7 +1304,42 @@ class DiffSenseViewProvider {
         if (frontendResult && frontendResult.files && frontendResult.files.length > 0) {
             // 使用前端变更分类器（已更新为F1-F5分类系统）
             const { classifications, summary } = FrontendChangeClassifier.classifyChanges(frontendResult.files);
-            // 创建单一的前端分析结果，包含所有文件
+            // 如果启用了Git分析，使用Git变更数据
+            let changedFilesCount = frontendResult.files.length;
+            let changedMethodsCount = 0;
+            let analysisMessage = '前端代码分析结果';
+            if (frontendResult.gitChanges) {
+                changedFilesCount = frontendResult.gitChanges.changedFilesCount;
+                changedMethodsCount = frontendResult.gitChanges.changedMethodsCount;
+                analysisMessage = `前端Git变更分析结果 (${changedFilesCount}个变更文件)`;
+            }
+            else {
+                // 静态分析模式
+                const allMethods = [];
+                frontendResult.files.forEach((file) => {
+                    if (file.methods) {
+                        file.methods.forEach((method) => {
+                            allMethods.push(`${file.relativePath}:${method.name}`);
+                        });
+                    }
+                });
+                changedMethodsCount = allMethods.length;
+                analysisMessage = `前端静态代码分析结果 (扫描${changedFilesCount}个文件)`;
+            }
+            // 过滤重要文件：只包含有方法的文件或高置信度分类的文件
+            const importantFiles = frontendResult.files.filter((file) => {
+                const classification = classifications.find(c => c.filePath === file.relativePath);
+                return ((file.methods && file.methods.length > 0) || // 有方法的文件
+                    (classification && classification.classification.confidence > 50) || // 高置信度分类
+                    file.relativePath.includes('/src/') || // 主要源码目录
+                    file.relativePath.includes('/components/') || // 组件目录
+                    file.relativePath.includes('/pages/') || // 页面目录
+                    file.relativePath.includes('/utils/') // 工具目录
+                );
+            });
+            // 限制文件数量（避免输出过多文件）
+            const limitedFiles = importantFiles.slice(0, 50);
+            // 创建单一的前端分析结果，包含重要文件
             const allMethods = [];
             const allFiles = [];
             const allFilePaths = []; // 新增：用于存储文件路径字符串
@@ -1277,7 +1356,7 @@ class DiffSenseViewProvider {
                     console.log(`🌐 前端项目类型: ${microserviceInfo}`);
                 }
             }
-            frontendResult.files.forEach((file) => {
+            limitedFiles.forEach((file) => {
                 // 收集文件路径字符串
                 allFilePaths.push(file.relativePath);
                 // 收集所有文件信息
@@ -1302,23 +1381,26 @@ class DiffSenseViewProvider {
             });
             // 创建单一的前端分析提交记录
             commits.push({
-                commitId: 'frontend',
-                message: `前端代码分析结果${microserviceInfo ? ` - ${microserviceInfo}` : ''}`,
+                commitId: frontendResult.gitChanges ? 'git-changes' : 'static-analysis',
+                message: `${analysisMessage}${microserviceInfo ? ` - ${microserviceInfo}` : ''} (显示${limitedFiles.length}/${frontendResult.files.length}个重要文件)`,
                 author: { name: '前端分析器', email: 'frontend@diffsense.com' },
                 timestamp: frontendResult.timestamp || new Date().toISOString(),
-                changedFilesCount: frontendResult.files.length,
-                changedMethodsCount: allMethods.length,
+                changedFilesCount: changedFilesCount,
+                changedMethodsCount: changedMethodsCount,
                 impactedMethods: allMethods,
                 impactedFiles: allFilePaths, // 修复：使用文件路径字符串数组
                 files: allFiles, // 保留详细文件信息用于其他用途
                 impactedTests: {},
-                changeClassifications: classifications,
+                changeClassifications: classifications.filter(c => limitedFiles.some((f) => f.relativePath === c.filePath)),
                 classificationSummary: summary,
                 language: 'frontend',
                 analysisSource: 'frontend',
                 frontendSummary: frontendResult.summary,
                 frontendDependencies: frontendResult.dependencies,
-                microserviceDetection: frontendResult.microserviceDetection || null
+                microserviceDetection: frontendResult.microserviceDetection || null,
+                totalFilesScanned: frontendResult.files.length,
+                importantFilesShown: limitedFiles.length,
+                gitChanges: frontendResult.gitChanges || null
             });
         }
         else {
@@ -1344,7 +1426,10 @@ class DiffSenseViewProvider {
                 language: 'frontend',
                 analysisSource: 'frontend',
                 frontendSummary: frontendResult.summary,
-                frontendDependencies: frontendResult.dependencies
+                frontendDependencies: frontendResult.dependencies,
+                totalFilesScanned: 0,
+                importantFilesShown: 0,
+                gitChanges: frontendResult.gitChanges || null
             });
         }
         return commits;
@@ -1401,11 +1486,26 @@ class DiffSenseViewProvider {
         if (golangResult && golangResult.files && golangResult.files.length > 0) {
             // 使用Golang变更分类器
             const { classifications, summary } = GolangChangeClassifier.classifyChanges(golangResult.files);
-            // 创建单一的Golang分析结果，包含所有文件和包
+            // 过滤重要文件：只包含有函数的文件或高置信度分类的文件
+            const importantFiles = golangResult.files.filter((file) => {
+                const classification = classifications.find(c => c.filePath === file.relativePath);
+                return ((file.functions && file.functions.length > 0) || // 有函数的文件
+                    (classification && classification.classification.confidence > 50) || // 高置信度分类
+                    file.relativePath.includes('/cmd/') || // 主程序目录
+                    file.relativePath.includes('/pkg/') || // 包目录
+                    file.relativePath.includes('/internal/') || // 内部包目录
+                    file.relativePath.includes('/api/') || // API目录
+                    file.relativePath.includes('/service/') || // 服务目录
+                    !file.relativePath.includes('_test.go') // 排除测试文件
+                );
+            });
+            // 限制文件数量（避免输出过多文件）
+            const limitedFiles = importantFiles.slice(0, 50);
+            // 创建单一的Golang分析结果，包含重要文件和包
             const allMethods = [];
             const allFiles = [];
             const packages = new Set();
-            golangResult.files.forEach((file) => {
+            limitedFiles.forEach((file) => {
                 // 收集包信息
                 if (file.packageName) {
                     packages.add(file.packageName);
@@ -1439,21 +1539,23 @@ class DiffSenseViewProvider {
             // 创建单一的Golang分析提交记录
             commits.push({
                 commitId: 'golang_analysis',
-                message: `Golang代码分析结果 (包含${packages.size}个包: ${Array.from(packages).join(', ')})`,
+                message: `Golang代码分析结果 (包含${packages.size}个包: ${Array.from(packages).join(', ')}) (显示${limitedFiles.length}/${golangResult.files.length}个重要文件)`,
                 author: { name: 'Golang分析器', email: 'golang@diffsense.com' },
                 timestamp: golangResult.timestamp || new Date().toISOString(),
-                changedFilesCount: golangResult.files.length,
+                changedFilesCount: limitedFiles.length,
                 changedMethodsCount: allMethods.length,
                 impactedMethods: allMethods,
                 impactedFiles: allFiles,
                 impactedTests: {},
-                changeClassifications: classifications,
+                changeClassifications: classifications.filter(c => limitedFiles.some((f) => f.relativePath === c.filePath)),
                 classificationSummary: summary,
                 language: 'golang',
                 analysisSource: 'golang',
                 packages: Array.from(packages),
                 golangSummary: golangResult.summary,
-                golangModules: golangResult.modules
+                golangModules: golangResult.modules,
+                totalFilesScanned: golangResult.files.length,
+                importantFilesShown: limitedFiles.length
             });
         }
         else {
@@ -1479,7 +1581,9 @@ class DiffSenseViewProvider {
                 analysisSource: 'golang',
                 packages: [],
                 golangSummary: golangResult.summary,
-                golangModules: golangResult.modules
+                golangModules: golangResult.modules,
+                totalFilesScanned: 0,
+                importantFilesShown: 0
             });
         }
         return commits;
