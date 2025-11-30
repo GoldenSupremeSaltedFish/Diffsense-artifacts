@@ -445,7 +445,11 @@ function activate(context) {
     const refreshCommand = vscode.commands.registerCommand('diffsense.refresh', () => {
         provider.refresh();
     });
-    context.subscriptions.push(analysisCommand, refreshCommand);
+    // 注册命令：显示输出面板
+    const showOutputCommand = vscode.commands.registerCommand('diffsense.showOutput', () => {
+        provider.showOutput();
+    });
+    context.subscriptions.push(analysisCommand, refreshCommand, showOutputCommand);
 }
 class DiffSenseViewProvider {
     constructor(_extensionUri) {
@@ -483,6 +487,14 @@ class DiffSenseViewProvider {
         }
         else {
             console.log(message);
+        }
+    }
+    /**
+     * 显示输出面板
+     */
+    showOutput() {
+        if (this._outputChannel) {
+            this._outputChannel.show(true);
         }
     }
     resolveWebviewView(webviewView, context, _token) {
