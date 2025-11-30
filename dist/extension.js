@@ -1868,7 +1868,8 @@ class DiffSenseViewProvider {
             padding: 0;
             width: 100% !important;
             height: 100% !important;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
             font-family: var(--vscode-font-family, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif);
             color: var(--vscode-foreground) !important;
             background-color: var(--vscode-editor-background) !important;
@@ -1877,10 +1878,9 @@ class DiffSenseViewProvider {
           
           #root {
             width: 100% !important;
-            height: 100% !important;
+            min-height: 100% !important;
             padding: 8px;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: visible;
             position: relative;
             color: var(--vscode-foreground) !important;
             background-color: var(--vscode-editor-background) !important;
