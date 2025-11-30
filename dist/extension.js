@@ -452,6 +452,38 @@ class DiffSenseViewProvider {
         this._extensionUri = _extensionUri;
         // Bug汇报相关的辅助方法
         this.recentErrors = [];
+        // 创建输出通道
+        this._outputChannel = vscode.window.createOutputChannel('DiffSense');
+    }
+    /**
+     * 统一的日志输出方法
+     * 同时输出到控制台和OutputChannel
+     */
+    log(message, type = 'log') {
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] ${message}`;
+        // 输出到OutputChannel
+        if (this._outputChannel) {
+            if (type === 'error') {
+                this._outputChannel.appendLine(`❌ ${logMessage}`);
+            }
+            else if (type === 'warn') {
+                this._outputChannel.appendLine(`⚠️ ${logMessage}`);
+            }
+            else {
+                this._outputChannel.appendLine(logMessage);
+            }
+        }
+        // 同时输出到控制台（用于开发者工具）
+        if (type === 'error') {
+            console.error(message);
+        }
+        else if (type === 'warn') {
+            console.warn(message);
+        }
+        else {
+            console.log(message);
+        }
     }
     resolveWebviewView(webviewView, context, _token) {
         this._view = webviewView;
@@ -538,8 +570,10 @@ class DiffSenseViewProvider {
     }
     async handleAnalysisRequest(data) {
         try {
-            console.log('=== 开始分析请求 ===');
-            console.log('请求数据:', data);
+            // 显示输出通道
+            this._outputChannel?.show(true);
+            this.log('=== 开始分析请求 ===');
+            this.log('请求数据: ' + JSON.stringify(data, null, 2));
             // 发送开始分析消息
             this._view?.webview.postMessage({
                 command: 'analysisStarted'
@@ -556,51 +590,53 @@ class DiffSenseViewProvider {
             let analysisResult;
             if (analysisType === 'frontend') {
                 // 前端代码分析
-                console.log('🔍 执行前端代码分析...');
-                console.log('分析选项:', analysisOptions);
+                this.log('🔍 执行前端代码分析...');
+                this.log('分析选项: ' + JSON.stringify(analysisOptions, null, 2));
                 analysisResult = await this.executeFrontendAnalysis(repoPath, data);
             }
             else if (analysisType === 'mixed') {
                 // 混合项目分析
-                console.log('🔍 执行混合项目分析...');
+                this.log('🔍 执行混合项目分析...');
                 analysisResult = await this.executeMixedAnalysis(repoPath, data);
             }
             else {
                 // 后端代码分析 (原有逻辑)
-                console.log('🔍 执行后端代码分析...');
-                console.log('分析选项:', analysisOptions);
+                this.log('🔍 执行后端代码分析...');
+                this.log('分析选项: ' + JSON.stringify(analysisOptions, null, 2));
                 // 检测后端语言
                 const repoUri = vscode.Uri.file(repoPath);
                 const backendLanguage = await this.detectBackendLanguage(repoUri);
-                console.log('🔍 检测到的后端语言:', backendLanguage);
+                this.log('🔍 检测到的后端语言: ' + backendLanguage);
                 if (backendLanguage === 'java') {
                     // Java分析
-                    console.log('☕ 使用Java分析器...');
+                    this.log('☕ 使用Java分析器...');
                     // 构建JAR文件路径 - 支持多种环境
                     const jarPath = this.getJavaAnalyzerPath();
                     // 检查JAR文件是否存在
                     if (!fs.existsSync(jarPath)) {
                         throw new Error(`JAR文件不存在: ${jarPath}`);
                     }
-                    console.log(`正在分析Java仓库: ${repoPath}`);
-                    console.log(`使用JAR: ${jarPath}`);
+                    this.log(`正在分析Java仓库: ${repoPath}`);
+                    this.log(`使用JAR: ${jarPath}`);
                     // 调用JAR进行分析
                     const result = await this.executeJarAnalysis(jarPath, repoPath, data);
                     // 解析结果并发送给前端
-                    console.log('=== 开始解析JAR结果 ===');
+                    this.log('=== 开始解析JAR结果 ===');
                     analysisResult = this.parseAnalysisResult(result.stdout);
                 }
                 else if (backendLanguage === 'golang') {
                     // Golang分析
-                    console.log('🐹 使用Golang分析器...');
+                    this.log('🐹 使用Golang分析器...');
                     analysisResult = await this.executeGolangAnalysis(repoPath, data);
                 }
                 else {
                     throw new Error(`不支持的后端语言: ${backendLanguage}。目前支持Java和Golang。`);
                 }
             }
-            console.log('解析后的结果:', analysisResult);
-            console.log('解析后结果数量:', Array.isArray(analysisResult) ? analysisResult.length : '非数组');
+            this.log('解析后的结果数量: ' + (Array.isArray(analysisResult) ? analysisResult.length : '非数组'));
+            if (Array.isArray(analysisResult) && analysisResult.length > 0) {
+                this.log(`✅ 分析完成！共找到 ${analysisResult.length} 个提交的分析结果`);
+            }
             // 保存分析结果用于导出
             this._lastAnalysisResult = analysisResult;
             // 发送分析完成消息到侧栏
@@ -612,7 +648,7 @@ class DiffSenseViewProvider {
             });
         }
         catch (error) {
-            console.error('分析失败:', error);
+            this.log('分析失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
             // 记录错误到日志
             this.addErrorToLog(error instanceof Error ? error.message : String(error), `分析请求失败 - 类型: ${data.analysisType || 'unknown'}, 分支: ${data.branch}`);
             // 发送错误消息给前端
@@ -1188,7 +1224,7 @@ class DiffSenseViewProvider {
                 }
             }
             catch (error) {
-                console.warn('后端分析失败:', error);
+                this.log('后端分析失败: ' + (error instanceof Error ? error.message : String(error)), 'warn');
             }
             // 执行前端分析
             try {
@@ -1197,7 +1233,7 @@ class DiffSenseViewProvider {
                 results.push(...frontendResult.map(item => ({ ...item, analysisSource: 'frontend' })));
             }
             catch (error) {
-                console.warn('前端分析失败:', error);
+                this.log('前端分析失败: ' + (error instanceof Error ? error.message : String(error)), 'warn');
             }
             // 如果没有任何结果，抛出错误而不是创建虚假提交
             if (results.length === 0) {
@@ -1206,7 +1242,7 @@ class DiffSenseViewProvider {
             return results;
         }
         catch (error) {
-            console.error('混合项目分析失败:', error);
+            this.log('混合项目分析失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
             throw error;
         }
     }
@@ -1219,8 +1255,8 @@ class DiffSenseViewProvider {
             if (analysisData.frontendPath) {
                 targetDir = path.join(repoPath, analysisData.frontendPath);
             }
-            console.log('执行前端分析命令:', 'node', analyzerPath, targetDir);
-            console.log('分析目录:', targetDir);
+            this.log('执行前端分析命令: node ' + analyzerPath + ' ' + targetDir);
+            this.log('分析目录: ' + targetDir);
             // 检查分析器文件是否存在
             if (!fs.existsSync(analyzerPath)) {
                 reject(new Error(`前端分析器文件不存在: ${analyzerPath}`));
@@ -1274,7 +1310,7 @@ class DiffSenseViewProvider {
             }
             // 添加微服务检测选项
             analyzerArgs.push('--enable-microservice-detection', 'true', '--enable-build-tool-detection', 'true', '--enable-framework-detection', 'true', '--max-depth', '20');
-            console.log('执行前端分析命令:', 'node', analyzerArgs.join(' '));
+            this.log('执行前端分析命令: node ' + analyzerArgs.join(' '));
             // 执行前端分析器
             const child = (0, child_process_1.execFile)('node', analyzerArgs, {
                 cwd: repoPath,
@@ -1282,30 +1318,34 @@ class DiffSenseViewProvider {
                 maxBuffer: 1024 * 1024 * 50 // 增加buffer到50MB
             }, (error, stdout, stderr) => {
                 if (error) {
-                    console.error('前端分析器执行错误:', error);
-                    console.error('stderr:', stderr);
+                    this.log('前端分析器执行错误: ' + (error instanceof Error ? error.message : String(error)), 'error');
+                    if (stderr) {
+                        this.log('stderr: ' + stderr, 'error');
+                    }
                     reject(new Error(`前端分析失败: ${error.message}\n${stderr}`));
                 }
                 else {
-                    console.log('前端分析器执行成功');
-                    console.log('stderr信息:', stderr); // 显示调试信息
+                    this.log('前端分析器执行成功');
+                    if (stderr) {
+                        this.log('stderr信息: ' + stderr);
+                    }
                     try {
                         const result = JSON.parse(stdout);
-                        console.log('前端分析结果:', result);
+                        this.log('前端分析结果解析成功');
                         // 转换为与后端分析结果兼容的格式
                         const convertedResult = this.convertFrontendResult(result, targetDir);
                         resolve(convertedResult);
                     }
                     catch (parseError) {
-                        console.error('前端分析结果JSON解析失败:', parseError);
-                        console.log('输出前500字符:', stdout.substring(0, 500));
+                        this.log('前端分析结果JSON解析失败: ' + (parseError instanceof Error ? parseError.message : String(parseError)), 'error');
+                        this.log('输出前500字符: ' + stdout.substring(0, 500), 'error');
                         reject(new Error(`前端分析结果解析失败: ${parseError}`));
                     }
                 }
             });
             // 监听进程退出
             child.on('exit', (code) => {
-                console.log(`前端分析器进程退出，代码: ${code}`);
+                this.log(`前端分析器进程退出，代码: ${code}`);
             });
         });
     }
@@ -1862,22 +1902,26 @@ class DiffSenseViewProvider {
                 maxBuffer: 1024 * 1024 * 10 // 10MB buffer
             }, (error, stdout, stderr) => {
                 if (error) {
-                    console.error('JAR执行错误:', error);
-                    console.error('stderr:', stderr);
+                    this.log('JAR执行错误: ' + (error instanceof Error ? error.message : String(error)), 'error');
+                    if (stderr) {
+                        this.log('stderr: ' + stderr, 'error');
+                    }
                     reject(new Error(`JAR执行失败: ${error.message}\n${stderr}`));
                 }
                 else {
-                    console.log('JAR执行成功');
-                    console.log('stderr信息:', stderr); // 显示调试信息
-                    console.log('JSON输出长度:', stdout.length);
-                    console.log('=== JAR原始输出开始 ===');
-                    console.log(stdout);
-                    console.log('=== JAR原始输出结束 ===');
+                    this.log('JAR执行成功');
+                    if (stderr) {
+                        this.log('stderr信息: ' + stderr);
+                    }
+                    this.log('JSON输出长度: ' + stdout.length);
+                    this.log('=== JAR原始输出开始 ===');
+                    this.log(stdout);
+                    this.log('=== JAR原始输出结束 ===');
                     // 尝试解析JSON以验证格式
                     try {
                         const parsed = JSON.parse(stdout);
-                        console.log('JSON解析成功，数据类型:', typeof parsed);
-                        console.log('是否为数组:', Array.isArray(parsed));
+                        this.log('JSON解析成功，数据类型: ' + typeof parsed);
+                        this.log('是否为数组: ' + Array.isArray(parsed));
                         if (Array.isArray(parsed)) {
                             console.log('数组长度:', parsed.length);
                             console.log('第一个元素:', parsed[0]);
