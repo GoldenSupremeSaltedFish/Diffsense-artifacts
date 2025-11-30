@@ -1278,8 +1278,8 @@ class DiffSenseViewProvider {
             // 执行前端分析器
             const child = (0, child_process_1.execFile)('node', analyzerArgs, {
                 cwd: repoPath,
-                timeout: 120000, // 增加超时时间到2分钟，支持微服务项目
-                maxBuffer: 1024 * 1024 * 20 // 增加buffer到20MB
+                timeout: 600000, // 增加超时时间到10分钟，支持大型项目
+                maxBuffer: 1024 * 1024 * 50 // 增加buffer到50MB
             }, (error, stdout, stderr) => {
                 if (error) {
                     console.error('前端分析器执行错误:', error);
@@ -1408,7 +1408,7 @@ class DiffSenseViewProvider {
                 language: 'frontend',
                 analysisSource: 'frontend',
                 frontendSummary: frontendResult.summary,
-                frontendDependencies: frontendResult.dependencies,
+                frontendDependencies: null, // 前端项目不分析依赖
                 microserviceDetection: frontendResult.microserviceDetection || null,
                 totalFilesScanned: frontendResult.files.length,
                 importantFilesShown: limitedFiles.length,
@@ -1439,7 +1439,7 @@ class DiffSenseViewProvider {
                 language: 'frontend',
                 analysisSource: 'frontend',
                 frontendSummary: frontendResult.summary,
-                frontendDependencies: frontendResult.dependencies,
+                frontendDependencies: null, // 前端项目不分析依赖
                 totalFilesScanned: 0,
                 importantFilesShown: 0,
                 gitChanges: frontendResult.gitChanges || null,
