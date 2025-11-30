@@ -1400,7 +1400,8 @@ class DiffSenseViewProvider {
                 microserviceDetection: frontendResult.microserviceDetection || null,
                 totalFilesScanned: frontendResult.files.length,
                 importantFilesShown: limitedFiles.length,
-                gitChanges: frontendResult.gitChanges || null
+                gitChanges: frontendResult.gitChanges || null,
+                granularModifications: frontendResult.modifications || [] // 添加granular modifications
             });
         }
         else {
@@ -1429,7 +1430,8 @@ class DiffSenseViewProvider {
                 frontendDependencies: frontendResult.dependencies,
                 totalFilesScanned: 0,
                 importantFilesShown: 0,
-                gitChanges: frontendResult.gitChanges || null
+                gitChanges: frontendResult.gitChanges || null,
+                granularModifications: frontendResult.modifications || [] // 添加granular modifications
             });
         }
         return commits;
