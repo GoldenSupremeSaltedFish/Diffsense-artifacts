@@ -1365,9 +1365,17 @@ class DiffSenseViewProvider {
         // 将前端分析结果转换为与后端分析结果兼容的格式
         const commits = [];
         // 检查是否有多个提交的分析结果（新格式）
-        if (frontendResult.gitChanges && frontendResult.gitChanges.commits && frontendResult.gitChanges.commits.length > 0) {
+        // 优先检查 result.commits（处理后的提交结果），如果没有则检查 result.gitChanges.commits
+        const hasCommits = (frontendResult.commits && frontendResult.commits.length > 0) ||
+            (frontendResult.gitChanges && frontendResult.gitChanges.commits && frontendResult.gitChanges.commits.length > 0);
+        if (hasCommits) {
             // 处理多个提交的情况
-            const commitResults = frontendResult.commits || frontendResult.gitChanges.commits;
+            // 优先使用处理后的提交结果（result.commits），如果为空或不存在则使用原始提交信息（result.gitChanges.commits）
+            const commitResults = (frontendResult.commits && frontendResult.commits.length > 0)
+                ? frontendResult.commits
+                : (frontendResult.gitChanges?.commits || []);
+            // 添加调试日志
+            this.log(`前端分析结果转换: 找到 ${commitResults.length} 个提交 (result.commits: ${frontendResult.commits?.length || 0}, gitChanges.commits: ${frontendResult.gitChanges?.commits?.length || 0})`);
             for (const commitInfo of commitResults) {
                 // 处理微服务检测结果
                 let microserviceInfo = '';
@@ -1385,18 +1393,36 @@ class DiffSenseViewProvider {
                 const classifications = commitInfo.changeClassifications || [];
                 const summary = commitInfo.classificationSummary || { totalFiles: 0, categoryStats: {}, averageConfidence: 0 };
                 const modifications = commitInfo.modifications || [];
-                // 过滤重要文件
-                const importantFiles = commitFiles.filter((file) => {
-                    const classification = classifications.find((c) => c.filePath === file.relativePath);
-                    return ((file.methods && file.methods.length > 0) ||
-                        (classification && classification.classification && classification.classification.confidence > 50) ||
-                        file.relativePath.includes('/src/') ||
-                        file.relativePath.includes('/components/') ||
-                        file.relativePath.includes('/pages/') ||
-                        file.relativePath.includes('/utils/'));
-                });
-                // 限制文件数量
-                const limitedFiles = importantFiles.slice(0, 50);
+                // 使用FFIS评分筛选重要文件（如果已启用FFIS）
+                let importantFiles = commitFiles;
+                if (commitInfo.ffis !== undefined || (commitFiles.length > 0 && commitFiles[0].ffis !== undefined)) {
+                    // 使用FFIS评分筛选：FFIS >= 0.3 的文件，或前20%的文件
+                    const minFFIS = 0.3;
+                    const topPercent = 20;
+                    const ffisFiltered = commitFiles.filter((file) => (file.ffis || 0) >= minFFIS);
+                    const topPercentCount = Math.max(1, Math.ceil(commitFiles.length * (topPercent / 100)));
+                    const topPercentFiles = commitFiles.slice(0, topPercentCount);
+                    importantFiles = ffisFiltered.length >= topPercentFiles.length ? ffisFiltered : topPercentFiles;
+                    if (importantFiles.length === 0 && commitFiles.length > 0) {
+                        importantFiles = commitFiles.slice(0, Math.min(10, commitFiles.length));
+                    }
+                }
+                else {
+                    // 向后兼容：使用旧的启发式方法
+                    importantFiles = commitFiles.filter((file) => {
+                        const classification = classifications.find((c) => c.filePath === file.relativePath);
+                        return ((file.methods && file.methods.length > 0) ||
+                            (classification && classification.classification && classification.classification.confidence > 50) ||
+                            file.relativePath.includes('/src/') ||
+                            file.relativePath.includes('/components/') ||
+                            file.relativePath.includes('/pages/') ||
+                            file.relativePath.includes('/utils/'));
+                    });
+                    if (importantFiles.length === 0 && commitFiles.length > 0) {
+                        importantFiles = commitFiles.slice(0, Math.min(10, commitFiles.length));
+                    }
+                }
+                const limitedFiles = importantFiles;
                 // 收集方法和文件路径
                 const allMethods = [];
                 const allFiles = [];
@@ -1474,19 +1500,40 @@ class DiffSenseViewProvider {
                 changedMethodsCount = allMethods.length;
                 analysisMessage = `前端静态代码分析结果 (扫描${changedFilesCount}个文件)`;
             }
-            // 过滤重要文件：只包含有方法的文件或高置信度分类的文件
-            const importantFiles = frontendResult.files.filter((file) => {
-                const classification = classifications.find(c => c.filePath === file.relativePath);
-                return ((file.methods && file.methods.length > 0) || // 有方法的文件
-                    (classification && classification.classification.confidence > 50) || // 高置信度分类
-                    file.relativePath.includes('/src/') || // 主要源码目录
-                    file.relativePath.includes('/components/') || // 组件目录
-                    file.relativePath.includes('/pages/') || // 页面目录
-                    file.relativePath.includes('/utils/') // 工具目录
-                );
-            });
-            // 限制文件数量（避免输出过多文件）
-            const limitedFiles = importantFiles.slice(0, 50);
+            // 使用FFIS评分筛选重要文件（如果已启用FFIS）
+            let importantFiles = frontendResult.files;
+            if (frontendResult.ffisEnabled && frontendResult.files && frontendResult.files.length > 0) {
+                // 使用FFIS评分筛选：FFIS >= 0.3 的文件，或前20%的文件（取两者中数量较多的）
+                const minFFIS = 0.3;
+                const topPercent = 20;
+                const ffisFiltered = frontendResult.files.filter((file) => (file.ffis || 0) >= minFFIS);
+                const topPercentCount = Math.max(1, Math.ceil(frontendResult.files.length * (topPercent / 100)));
+                const topPercentFiles = frontendResult.files.slice(0, topPercentCount);
+                // 取两者中数量较多的，但不超过总文件数
+                importantFiles = ffisFiltered.length >= topPercentFiles.length ? ffisFiltered : topPercentFiles;
+                // 确保至少显示一些文件（如果FFIS筛选结果为空，至少显示前10个）
+                if (importantFiles.length === 0 && frontendResult.files.length > 0) {
+                    importantFiles = frontendResult.files.slice(0, Math.min(10, frontendResult.files.length));
+                }
+            }
+            else {
+                // 如果没有FFIS评分，使用旧的启发式方法（向后兼容）
+                importantFiles = frontendResult.files.filter((file) => {
+                    const classification = classifications.find(c => c.filePath === file.relativePath);
+                    return ((file.methods && file.methods.length > 0) || // 有方法的文件
+                        (classification && classification.classification.confidence > 50) || // 高置信度分类
+                        file.relativePath.includes('/src/') || // 主要源码目录
+                        file.relativePath.includes('/components/') || // 组件目录
+                        file.relativePath.includes('/pages/') || // 页面目录
+                        file.relativePath.includes('/utils/') // 工具目录
+                    );
+                });
+                // 如果没有重要文件，至少显示前10个
+                if (importantFiles.length === 0 && frontendResult.files.length > 0) {
+                    importantFiles = frontendResult.files.slice(0, Math.min(10, frontendResult.files.length));
+                }
+            }
+            const limitedFiles = importantFiles;
             // 创建单一的前端分析结果，包含重要文件
             const allMethods = [];
             const allFiles = [];
@@ -1530,7 +1577,7 @@ class DiffSenseViewProvider {
             // 创建单一的前端分析提交记录
             commits.push({
                 commitId: frontendResult.gitChanges ? 'git-changes' : 'static-analysis',
-                message: `${analysisMessage}${microserviceInfo ? ` - ${microserviceInfo}` : ''} (显示${limitedFiles.length}/${frontendResult.files.length}个重要文件)`,
+                message: `${analysisMessage}${microserviceInfo ? ` - ${microserviceInfo}` : ''} (显示${limitedFiles.length}/${frontendResult.files.length}个重要文件${frontendResult.ffisEnabled ? ' [FFIS评分]' : ''})`,
                 author: { name: '前端分析器', email: 'frontend@diffsense.com' },
                 timestamp: frontendResult.timestamp || new Date().toISOString(),
                 changedFilesCount: changedFilesCount,
@@ -1637,7 +1684,7 @@ class DiffSenseViewProvider {
             // 使用Golang变更分类器
             const { classifications, summary } = GolangChangeClassifier.classifyChanges(golangResult.files);
             // 过滤重要文件：只包含有函数的文件或高置信度分类的文件
-            const importantFiles = golangResult.files.filter((file) => {
+            let importantFiles = golangResult.files.filter((file) => {
                 const classification = classifications.find(c => c.filePath === file.relativePath);
                 return ((file.functions && file.functions.length > 0) || // 有函数的文件
                     (classification && classification.classification.confidence > 50) || // 高置信度分类
@@ -1649,8 +1696,12 @@ class DiffSenseViewProvider {
                     !file.relativePath.includes('_test.go') // 排除测试文件
                 );
             });
-            // 限制文件数量（避免输出过多文件）
-            const limitedFiles = importantFiles.slice(0, 50);
+            // 如果没有重要文件，至少显示前20%或前20个文件（取较小值）
+            if (importantFiles.length === 0 && golangResult.files.length > 0) {
+                const topPercentCount = Math.ceil(golangResult.files.length * 0.2);
+                importantFiles = golangResult.files.slice(0, Math.min(20, topPercentCount));
+            }
+            const limitedFiles = importantFiles;
             // 创建单一的Golang分析结果，包含重要文件和包
             const allMethods = [];
             const allFiles = [];

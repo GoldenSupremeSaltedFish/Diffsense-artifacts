@@ -1,14 +1,14 @@
 {
   "version": "0.1.15",
-  "buildTime": "2025-12-02T14:49:34Z",
-  "commit": "3a8041d06e93ee1a3a9c9b11a513dcd15048c9a3",
+  "buildTime": "2025-12-02T16:03:54Z",
+  "commit": "9362a68d717acf68787e82a6ef44beabb1503e26",
   "branch": "main",
   "isProduction": true,
   "debugMode": false,
   "artifactsOnly": true,
   "buildInfo": {
     "javaAnalyzer": "2 JAR files",
-    "nodeAnalyzer": "9 JS files",
+    "nodeAnalyzer": "10 JS files",
     "golangAnalyzer": "1 JS files",
     "frontend": "0 files",
     "vsix": "1 files"
