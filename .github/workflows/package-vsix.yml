@@ -98,6 +98,9 @@ jobs:
             echo "✅ golang-analyzer node_modules 存在 ($(du -sh analyzers/golang-analyzer/node_modules | cut -f1))"
           fi
 
+      - name: Clean old VSIX files
+        run: rm -f *.vsix
+        
       - name: Package VSIX
         run: npx vsce package --no-yarn
 
@@ -106,8 +109,12 @@ jobs:
           echo "📦 VSIX 包信息:"
           ls -la *.vsix
           
-          # 解压并检查VSIX内容
-          VSIX_FILE=$(ls *.vsix)
+          # 获取最新生成的VSIX文件（按修改时间排序，取最新的）
+          VSIX_FILE=$(ls -t *.vsix | head -1)
+          if [ -z "$VSIX_FILE" ]; then
+            echo "❌ 未找到VSIX文件"
+            exit 1
+          fi
           echo "📋 解压 $VSIX_FILE 检查内容..."
           
           # 创建临时目录解压
@@ -156,7 +163,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: diffsense-vsix-${{ github.sha }}
-          path: "*.vsix"
+          path: "diffsense-*.vsix"
           retention-days: 30
 
       - name: Upload VSIX to release (on main branch)
@@ -175,7 +182,7 @@ jobs:
             
             🔄 **提交信息:** ${{ github.event.head_commit.message }}
             📅 **构建时间:** ${{ github.run_id }}
-          files: "*.vsix"
+          files: "diffsense-*.vsix"
           draft: false
           prerelease: false
         env:
