@@ -40,15 +40,52 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
 const vscode = __importStar(require("vscode"));
+const DatabaseService_1 = require("./database/DatabaseService");
+const ProjectInferenceEngine = require('../../analyzers/project-inference/engine');
 class DiffSense {
-    constructor(extensionUri) {
+    constructor(context) {
         // Bug汇报相关的辅助方法
         this.recentErrors = [];
-        this._extensionUri = extensionUri;
+        this._extensionUri = context.extensionUri;
+        this._outputChannel = vscode.window.createOutputChannel('DiffSense');
+        this._databaseService = DatabaseService_1.DatabaseService.getInstance(context);
+        this.inferenceEngine = new ProjectInferenceEngine();
+        // Initialize database
+        this._databaseService.initialize().catch((err) => {
+            this.log(`Database initialization failed: ${err}`, 'error');
+        });
     }
     log(message, level = 'info') {
         if (this._outputChannel) {
             this._outputChannel.appendLine(`[${level}] ${message}`);
+        }
+    }
+    showOutput() {
+        this._outputChannel.show();
+    }
+    async refresh() {
+        this.log('Refreshing DiffSense Project Analysis...');
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showWarningMessage('No workspace opened');
+            return;
+        }
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        try {
+            const result = await this.inferenceEngine.infer(rootPath);
+            this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
+            vscode.window.showInformationMessage(`DiffSense: Detected ${result.projectType} project`);
+            // Notify webview if it exists
+            if (this._view) {
+                this._view.postMessage({
+                    command: 'projectInferenceResult',
+                    data: result
+                });
+            }
+        }
+        catch (error) {
+            this.log(`Refresh failed: ${error}`, 'error');
+            vscode.window.showErrorMessage(`DiffSense Refresh Failed: ${error}`);
         }
     }
     async exportResult(exportData, language, saveUri) {
@@ -1555,7 +1592,11 @@ async function cleanupDatabase() {
 }
 let provider;
 function activate(context) {
-    provider = new DiffSense(context.extensionUri);
+    provider = new DiffSense(context);
+    context.subscriptions.push(vscode.commands.registerCommand('diffsense.refresh', () => provider?.refresh()), vscode.commands.registerCommand('diffsense.showOutput', () => provider?.showOutput()), vscode.commands.registerCommand('diffsense.cleanupDatabase', () => provider?.cleanupDatabase()), vscode.commands.registerCommand('diffsense.runAnalysis', () => {
+        vscode.window.showInformationMessage('Analysis started (Check Output)');
+        provider?.refresh();
+    }));
 }
 function getCategoryDisplayName(category) {
     return category;
