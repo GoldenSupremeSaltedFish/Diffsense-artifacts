@@ -71,6 +71,18 @@ class DatabaseService extends events_1.EventEmitter {
             fs.mkdirSync(dir, { recursive: true });
         }
     }
+    async cleanupData(cutoffTime) {
+        await this.withRetry(async () => {
+            if (this.config.enableWorker) {
+                // Send a custom cleanup command if needed, or just use the standard cleanup mechanism
+                // For now, we'll reuse the cleanup mechanism but force a specific cutoff
+                // Since the worker has its own cleanup logic, we might need to add a new message type
+                // or just rely on the initialization cleanup.
+                // Let's add a specific cleanup message type to the worker.
+                await this.sendWorkerMessage('cleanupData', { cutoffTime });
+            }
+        });
+    }
     async initialize() {
         if (this.isInitialized) {
             return;
@@ -128,7 +140,7 @@ class DatabaseService extends events_1.EventEmitter {
         // For now, we'll use worker-based approach
         throw new Error('Direct initialization not implemented yet');
     }
-    sendWorkerMessage(action, data) {
+    async sendWorkerMessage(action, data = {}, timeout = 30000) {
         if (!this.worker) {
             throw new Error('Worker not initialized');
         }
@@ -140,13 +152,13 @@ class DatabaseService extends events_1.EventEmitter {
                 action,
                 data
             });
-            // Timeout after 30 seconds
+            // Timeout
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
                     reject(new Error('Database operation timeout'));
                 }
-            }, 30000);
+            }, timeout);
         });
     }
     // Database operations with retry mechanism
@@ -347,6 +359,13 @@ class DatabaseService extends events_1.EventEmitter {
     }
     async dispose() {
         if (this.worker) {
+            try {
+                // Try to close database gracefully
+                await this.sendWorkerMessage('close', {}, 1000);
+            }
+            catch (e) {
+                // Ignore errors during close
+            }
             await this.worker.terminate();
             this.worker = null;
         }
