@@ -48,7 +48,10 @@ class DiffSense {
         this.recentErrors = [];
         this.context = context;
         this._extensionUri = context.extensionUri;
+        // 1. Initialize OutputChannel immediately
         this._outputChannel = vscode.window.createOutputChannel('DiffSense');
+        this._outputChannel.show(true); // Show output channel immediately as requested
+        this.log('DiffSense activating...', 'info');
         this._databaseService = DatabaseService_1.DatabaseService.getInstance(context);
         // Pass logger to inference engine
         const logger = {
@@ -57,10 +60,38 @@ class DiffSense {
             warn: (msg) => this.log(msg, 'warn')
         };
         this.inferenceEngine = new ProjectInferenceEngine(logger);
-        // Initialize database
+        // Initialize database in background
         this._databaseService.initialize().catch((err) => {
             this.log(`Database initialization failed: ${err}`, 'error');
         });
+    }
+    resolveWebviewView(webviewView, context, _token) {
+        this._view = webviewView.webview;
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                this._extensionUri
+            ]
+        };
+        // Set initial HTML with loading state
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        // Handle messages from the webview
+        webviewView.webview.onDidReceiveMessage(data => {
+            switch (data.command) {
+                case 'refresh':
+                    this.refresh();
+                    break;
+                case 'openLog':
+                    this.showOutput();
+                    break;
+            }
+        });
+        // Start background analysis once UI is ready
+        this.log('Webview resolved, starting background analysis...');
+        // Delay slightly to ensure UI is rendered
+        setTimeout(() => {
+            this.refresh();
+        }, 500);
     }
     log(message, level = 'info') {
         if (this._outputChannel) {
@@ -74,35 +105,87 @@ class DiffSense {
         this.log('Refreshing DiffSense Project Analysis...');
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
-            vscode.window.showWarningMessage('No workspace opened');
+            this._view?.postMessage({ command: 'statusUpdate', text: 'No workspace opened' });
             return;
         }
         const rootPath = workspaceFolders[0].uri.fsPath;
         try {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: "DiffSense: Analyzing Project",
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ message: "Starting inference..." });
-                const result = await this.inferenceEngine.infer(rootPath, null, (msg) => {
-                    progress.report({ message: msg });
-                });
-                this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
-                vscode.window.showInformationMessage(`DiffSense: Detected ${result.projectType} project`);
-                // Notify webview if it exists
-                if (this._view) {
-                    this._view.postMessage({
-                        command: 'projectInferenceResult',
-                        data: result
-                    });
-                }
+            this._view?.postMessage({ command: 'statusUpdate', text: 'Analyzing Project... 🔄' });
+            // Run inference in background
+            const result = await this.inferenceEngine.infer(rootPath, null, (msg) => {
+                this._view?.postMessage({ command: 'statusUpdate', text: msg });
+                this.log(msg);
             });
+            this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
+            if (this._view) {
+                this._view.postMessage({
+                    command: 'projectInferenceResult',
+                    data: result
+                });
+            }
         }
         catch (error) {
             this.log(`Refresh failed: ${error}`, 'error');
-            vscode.window.showErrorMessage(`DiffSense Refresh Failed: ${error}`);
+            this._view?.postMessage({ command: 'error', text: String(error) });
         }
+    }
+    _getHtmlForWebview(webview) {
+        return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>DiffSense</title>
+        <style>
+            body { font-family: sans-serif; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+            .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            .hidden { display: none; }
+            #content { width: 100%; text-align: left; }
+            pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow: auto; max-height: 400px; }
+        </style>
+    </head>
+    <body>
+        <div id="status-container">
+            <div class="spinner"></div>
+            <h3 id="status-text">Initializing DiffSense...</h3>
+        </div>
+        <div id="content" class="hidden">
+            <h3>Analysis Result</h3>
+            <pre id="result-data"></pre>
+        </div>
+        <script>
+            const vscode = acquireVsCodeApi();
+            window.addEventListener('message', event => {
+                const message = event.data;
+                const statusText = document.getElementById('status-text');
+                const spinner = document.querySelector('.spinner');
+                const content = document.getElementById('content');
+                const resultData = document.getElementById('result-data');
+
+                switch (message.command) {
+                    case 'statusUpdate':
+                        statusText.innerText = message.text;
+                        spinner.style.display = 'block';
+                        break;
+                    case 'projectInferenceResult':
+                        statusText.innerText = 'Analysis Complete ✅';
+                        spinner.style.display = 'none';
+                        content.classList.remove('hidden');
+                        resultData.innerText = JSON.stringify(message.data, null, 2);
+                        break;
+                    case 'error':
+                        statusText.innerText = 'Error: ' + message.text;
+                        spinner.style.display = 'none';
+                        statusText.style.color = 'red';
+                        break;
+                }
+            });
+            // Signal ready
+            vscode.postMessage({ command: 'refresh' });
+        </script>
+    </body>
+    </html>`;
     }
     /**
      * 处理扩展更新
@@ -1638,6 +1721,8 @@ async function cleanupDatabase() {
 let provider;
 function activate(context) {
     provider = new DiffSense(context);
+    // Register WebviewViewProvider immediately
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider('diffsense.analysisView', provider));
     // 检查版本更新或重装
     const currentVersion = context.extension.packageJSON.version;
     const previousVersion = context.globalState.get('diffsenseVersion');
@@ -1674,7 +1759,4 @@ function activate(context) {
         vscode.window.showInformationMessage('Analysis started (Check Output)');
         provider?.refresh();
     }));
-}
-function getCategoryDisplayName(category) {
-    return category;
 }
