@@ -93,8 +93,9 @@ class DiffSense {
      * 处理扩展更新
      * 当检测到版本变更时调用，用于重置资源或迁移数据
      */
-    async handleUpdate(oldVersion, newVersion) {
-        this.log(`检测到扩展更新: ${oldVersion || '首次安装'} -> ${newVersion}`);
+    async handleUpdate(oldVersion, newVersion, reason = 'update') {
+        const actionText = reason === 'reinstall' ? '重新安装' : '更新';
+        this.log(`检测到扩展${actionText}: ${oldVersion || '未知'} -> ${newVersion}`);
         this.log('正在执行资源重置...');
         try {
             // 1. 关闭现有数据库连接（如果已打开）
@@ -105,8 +106,12 @@ class DiffSense {
             this._databaseService = DatabaseService_1.DatabaseService.getInstance(this.context);
             await this._databaseService.initialize();
             // 3. 执行深度清理
-            await this._databaseService.cleanupData(Date.now() - (30 * 24 * 60 * 60 * 1000)); // 清理30天前的数据
-            vscode.window.showInformationMessage(`DiffSense 已更新至 v${newVersion}，资源已重置以确保最佳性能。`);
+            // 如果是重装，我们可能想要更彻底的清理（例如全部清理），但为了保留用户历史数据（如果是云同步的），
+            // 我们还是保留最近的数据。如果用户真的想全新开始，通常会手动删除数据文件夹。
+            // 这里我们维持30天的策略，或者对于重装可以考虑清理更多。
+            // 考虑到"卸载重装"通常是为了解决问题，执行一次 VACUUM 和索引重建（包含在 initialize/cleanup 中）是有益的。
+            await this._databaseService.cleanupData(Date.now() - (30 * 24 * 60 * 60 * 1000));
+            vscode.window.showInformationMessage(`DiffSense 已${actionText}至 v${newVersion}，资源已重置以确保最佳性能。`);
             this.log('资源重置完成');
         }
         catch (error) {
@@ -1618,13 +1623,37 @@ async function cleanupDatabase() {
 let provider;
 function activate(context) {
     provider = new DiffSense(context);
-    // 检查版本更新
+    // 检查版本更新或重装
     const currentVersion = context.extension.packageJSON.version;
     const previousVersion = context.globalState.get('diffsenseVersion');
-    if (currentVersion !== previousVersion) {
-        provider.handleUpdate(previousVersion, currentVersion).then(() => {
+    // 检查安装标记文件（用于检测同版本重装）
+    // 当用户卸载插件时，扩展目录会被删除，标记文件也会消失
+    // 但 globalState 会保留。所以如果 globalState 有值但标记文件不存在，说明是重装
+    const markerPath = path.join(context.extensionPath, '.install-marker');
+    const isReinstall = previousVersion && !fs.existsSync(markerPath);
+    if (currentVersion !== previousVersion || isReinstall) {
+        const reason = isReinstall ? 'reinstall' : 'update';
+        provider.handleUpdate(previousVersion, currentVersion, reason).then(() => {
             context.globalState.update('diffsenseVersion', currentVersion);
+            // 创建标记文件
+            try {
+                fs.writeFileSync(markerPath, Date.now().toString());
+            }
+            catch (e) {
+                console.error('Failed to create install marker:', e);
+            }
         });
+    }
+    else {
+        // 确保标记文件存在（防止意外删除）
+        if (!fs.existsSync(markerPath)) {
+            try {
+                fs.writeFileSync(markerPath, Date.now().toString());
+            }
+            catch (e) {
+                // Ignore
+            }
+        }
     }
     context.subscriptions.push(vscode.commands.registerCommand('diffsense.refresh', () => provider?.refresh()), vscode.commands.registerCommand('diffsense.showOutput', () => provider?.showOutput()), vscode.commands.registerCommand('diffsense.cleanupDatabase', () => provider?.cleanupDatabase()), vscode.commands.registerCommand('diffsense.runAnalysis', () => {
         vscode.window.showInformationMessage('Analysis started (Check Output)');
