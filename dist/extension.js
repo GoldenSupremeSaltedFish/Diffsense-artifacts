@@ -50,7 +50,13 @@ class DiffSense {
         this._extensionUri = context.extensionUri;
         this._outputChannel = vscode.window.createOutputChannel('DiffSense');
         this._databaseService = DatabaseService_1.DatabaseService.getInstance(context);
-        this.inferenceEngine = new ProjectInferenceEngine();
+        // Pass logger to inference engine
+        const logger = {
+            log: (msg) => this.log(msg, 'info'),
+            error: (msg) => this.log(msg, 'error'),
+            warn: (msg) => this.log(msg, 'warn')
+        };
+        this.inferenceEngine = new ProjectInferenceEngine(logger);
         // Initialize database
         this._databaseService.initialize().catch((err) => {
             this.log(`Database initialization failed: ${err}`, 'error');
@@ -73,16 +79,25 @@ class DiffSense {
         }
         const rootPath = workspaceFolders[0].uri.fsPath;
         try {
-            const result = await this.inferenceEngine.infer(rootPath);
-            this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
-            vscode.window.showInformationMessage(`DiffSense: Detected ${result.projectType} project`);
-            // Notify webview if it exists
-            if (this._view) {
-                this._view.postMessage({
-                    command: 'projectInferenceResult',
-                    data: result
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "DiffSense: Analyzing Project",
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: "Starting inference..." });
+                const result = await this.inferenceEngine.infer(rootPath, null, (msg) => {
+                    progress.report({ message: msg });
                 });
-            }
+                this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
+                vscode.window.showInformationMessage(`DiffSense: Detected ${result.projectType} project`);
+                // Notify webview if it exists
+                if (this._view) {
+                    this._view.postMessage({
+                        command: 'projectInferenceResult',
+                        data: result
+                    });
+                }
+            });
         }
         catch (error) {
             this.log(`Refresh failed: ${error}`, 'error');

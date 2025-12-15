@@ -1,8 +1,8 @@
 {
   "version": "0.1.15",
-  "buildTime": "2025-12-15T04:45:27Z",
-  "commit": "ec4cb75105d87effeb1bb9cf4da90fb6636e71be",
-  "branch": "main",
+  "buildTime": "2025-12-15T12:55:02Z",
+  "commit": "6fae2ee8e0fabc3c2b2ccdecce3ea2cf9c8741bb",
+  "branch": "release/2.1.2",
   "isProduction": true,
   "debugMode": false,
   "artifactsOnly": true,
