@@ -37,8 +37,10 @@ exports.CommitAnalyzer = void 0;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 class CommitAnalyzer {
+    databaseService;
+    workspaceRoot;
+    isAnalyzing = false;
     constructor(databaseService, workspaceRoot) {
-        this.isAnalyzing = false;
         this.databaseService = databaseService;
         this.workspaceRoot = workspaceRoot;
     }

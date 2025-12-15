@@ -40,12 +40,15 @@ const fs = __importStar(require("fs"));
 const worker_threads_1 = require("worker_threads");
 const events_1 = require("events");
 class DatabaseService extends events_1.EventEmitter {
+    static instance;
+    worker = null;
+    dbPath;
+    config;
+    isInitialized = false;
+    messageId = 0;
+    pendingRequests = new Map();
     constructor(context, config) {
         super();
-        this.worker = null;
-        this.isInitialized = false;
-        this.messageId = 0;
-        this.pendingRequests = new Map();
         this.config = {
             dbPath: path.join(context.globalStorageUri.fsPath, 'diffsense.db'),
             enableWorker: true,
