@@ -44,6 +44,15 @@ const vscode = __importStar(require("vscode"));
 const DatabaseService_1 = require("./database/DatabaseService");
 // Lazy load ProjectInferenceEngine to speed up activation
 let ProjectInferenceEngine;
+// 插件状态枚举
+var PluginState;
+(function (PluginState) {
+    PluginState["IDLE"] = "idle";
+    PluginState["SCANNING"] = "scanning";
+    PluginState["ANALYZING"] = "analyzing";
+    PluginState["READY"] = "ready";
+    PluginState["ERROR"] = "error";
+})(PluginState || (PluginState = {}));
 class DiffSense {
     _extensionUri;
     _outputChannel;
@@ -52,105 +61,200 @@ class DiffSense {
     _view;
     inferenceEngine;
     context;
+    currentState = PluginState.IDLE;
+    backgroundTaskCancellation = null;
     constructor(context) {
         this.context = context;
         this._extensionUri = context.extensionUri;
-        // 1. Initialize OutputChannel immediately
+        // ✅ 1. 插件激活第一行：立即注册 OutputChannel（工程级要求）
         this._outputChannel = vscode.window.createOutputChannel('DiffSense');
-        this._outputChannel.show(true); // Show output channel immediately as requested
-        this.log('DiffSense activating...', 'info');
+        this._outputChannel.show(true); // 立即显示输出通道
+        this.log('[Activation] DiffSense 插件激活中...', 'info');
         this._databaseService = DatabaseService_1.DatabaseService.getInstance(context);
-        // Initialize database in background
+        // 数据库初始化在后台进行，不阻塞
         this._databaseService.initialize().catch((err) => {
-            this.log(`Database initialization failed: ${err}`, 'error');
+            this.log(`[Database] 数据库初始化失败: ${err}`, 'error');
         });
-        this.log('DiffSense initialized. Waiting for view to resolve...', 'info');
+        this.log('[Activation] DiffSense 插件已激活，等待 UI 解析...', 'info');
     }
     resolveWebviewView(webviewView, context, _token) {
         this._view = webviewView.webview;
-        this.log('WebviewView resolving...', 'info');
+        this.log('[UI] WebviewView 正在解析...', 'info');
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [
                 this._extensionUri
             ]
         };
-        // Set initial HTML with loading state
+        // ✅ 2. UI 立即显示（空状态），不等待任何分析
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        this.log('Webview HTML set. Waiting for content...', 'info');
+        this.log('[UI] Webview HTML 已设置，UI 已显示', 'info');
+        // ✅ 立即通知 UI 插件已激活
+        this.updateUIState(PluginState.IDLE, 'DiffSense 已激活，准备分析项目...');
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(data => {
             switch (data.command) {
                 case 'refresh':
-                    this.refresh();
+                    this.startBackgroundAnalysis();
                     break;
                 case 'openLog':
                     this.showOutput();
                     break;
+                case 'cancelAnalysis':
+                    this.cancelBackgroundAnalysis();
+                    break;
             }
         });
-        // Start background analysis once UI is ready
-        this.log('Webview resolved, scheduling background analysis...', 'info');
-        // Delay slightly to ensure UI is rendered
+        // ✅ 3. UI 显示后，立即启动后台任务（不阻塞）
+        this.log('[Background] 调度后台分析任务...', 'info');
+        // 使用 setTimeout 确保 UI 完全渲染后再启动
         setTimeout(() => {
-            this.refresh();
-        }, 500);
+            this.startBackgroundAnalysis();
+        }, 100);
     }
     log(message, level = 'info') {
         if (this._outputChannel) {
-            this._outputChannel.appendLine(`[${level}] ${message}`);
+            const timestamp = new Date().toLocaleTimeString();
+            this._outputChannel.appendLine(`[${timestamp}] [${level.toUpperCase()}] ${message}`);
         }
     }
     showOutput() {
         this._outputChannel.show();
     }
-    async refresh() {
-        this.log('Refreshing DiffSense Project Analysis...');
-        // Lazy initialize inference engine
-        if (!this.inferenceEngine) {
-            this.log('Initializing Inference Engine...', 'info');
-            try {
-                if (!ProjectInferenceEngine) {
-                    ProjectInferenceEngine = require('../analyzers/project-inference/engine');
-                }
-                const logger = {
-                    log: (msg) => this.log(msg, 'info'),
-                    error: (msg) => this.log(msg, 'error'),
-                    warn: (msg) => this.log(msg, 'warn')
-                };
-                this.inferenceEngine = new ProjectInferenceEngine(logger);
-            }
-            catch (e) {
-                this.log(`Failed to load inference engine: ${e}`, 'error');
-                this._view?.postMessage({ command: 'error', text: `Engine load failed: ${e}` });
-                return;
-            }
+    /**
+     * ✅ 更新 UI 状态（状态驱动）
+     */
+    updateUIState(state, message, details) {
+        this.currentState = state;
+        this._view?.postMessage({
+            command: 'stateUpdate',
+            state: state,
+            message: message,
+            details: details
+        });
+        this.log(`[State] ${state.toUpperCase()}: ${message}${details ? ` - ${details}` : ''}`, 'info');
+    }
+    /**
+     * ✅ 取消后台分析任务
+     */
+    cancelBackgroundAnalysis() {
+        if (this.backgroundTaskCancellation) {
+            this.log('[Background] 取消后台分析任务', 'info');
+            this.backgroundTaskCancellation.cancel();
+            this.backgroundTaskCancellation.dispose();
+            this.backgroundTaskCancellation = null;
+            this.updateUIState(PluginState.IDLE, '分析已取消');
         }
+    }
+    /**
+     * ✅ 启动后台分析任务（完全后台化，不阻塞主线程）
+     */
+    async startBackgroundAnalysis() {
+        // 如果已经在运行，先取消
+        if (this.backgroundTaskCancellation) {
+            this.cancelBackgroundAnalysis();
+        }
+        // 创建取消令牌
+        this.backgroundTaskCancellation = new vscode.CancellationTokenSource();
+        // 在后台执行，不阻塞
+        this.runBackgroundAnalysis(this.backgroundTaskCancellation.token).catch((error) => {
+            this.log(`[Background] 后台分析任务异常: ${error}`, 'error');
+            this.updateUIState(PluginState.ERROR, `分析失败: ${error instanceof Error ? error.message : String(error)}`);
+        });
+    }
+    /**
+     * ✅ 执行后台分析（分阶段，带详细日志）
+     */
+    async runBackgroundAnalysis(cancellationToken) {
+        this.log('[Background] ========== 开始后台项目分析 ==========', 'info');
+        // 检查工作区
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
-            this._view?.postMessage({ command: 'statusUpdate', text: 'No workspace opened' });
+            this.log('[Background] ❌ 未找到工作区文件夹', 'warn');
+            this.updateUIState(PluginState.ERROR, '未找到工作区，请先打开一个项目');
             return;
         }
         const rootPath = workspaceFolders[0].uri.fsPath;
+        this.log(`[Background] 工作区路径: ${rootPath}`, 'info');
+        // 延迟初始化推理引擎
+        if (!this.inferenceEngine) {
+            this.log('[Background] [阶段 0] 初始化推理引擎...', 'info');
+            try {
+                if (!ProjectInferenceEngine) {
+                    this.log('[Background] [阶段 0] 加载 ProjectInferenceEngine 模块...', 'info');
+                    ProjectInferenceEngine = require('../analyzers/project-inference/engine');
+                }
+                const logger = {
+                    log: (msg) => this.log(`[Engine] ${msg}`, 'info'),
+                    error: (msg) => this.log(`[Engine] ${msg}`, 'error'),
+                    warn: (msg) => this.log(`[Engine] ${msg}`, 'warn')
+                };
+                this.inferenceEngine = new ProjectInferenceEngine(logger);
+                this.log('[Background] [阶段 0] ✅ 推理引擎初始化完成', 'info');
+            }
+            catch (e) {
+                const errorMsg = `推理引擎加载失败: ${e}`;
+                this.log(`[Background] [阶段 0] ❌ ${errorMsg}`, 'error');
+                this.updateUIState(PluginState.ERROR, errorMsg);
+                return;
+            }
+        }
+        // ✅ 阶段 1: 文件扫描
+        if (cancellationToken.isCancellationRequested)
+            return;
+        this.updateUIState(PluginState.SCANNING, '正在扫描项目文件...', '阶段 1/5');
+        this.log('[Background] [阶段 1] 开始文件扫描...', 'info');
+        // ✅ 阶段 2-5: 项目推理（带进度回调）
+        if (cancellationToken.isCancellationRequested)
+            return;
+        this.updateUIState(PluginState.ANALYZING, '正在分析项目结构...', '阶段 2/5');
+        this.log('[Background] [阶段 2] 开始项目推理...', 'info');
         try {
-            this._view?.postMessage({ command: 'statusUpdate', text: 'Analyzing Project... 🔄' });
-            // Run inference in background
             const result = await this.inferenceEngine.infer(rootPath, null, (msg) => {
-                this._view?.postMessage({ command: 'statusUpdate', text: msg });
-                this.log(msg);
+                // ✅ 所有进度更新都记录日志
+                this.log(`[Background] [进度] ${msg}`, 'info');
+                this._view?.postMessage({
+                    command: 'progressUpdate',
+                    message: msg
+                });
             });
-            this.log(`Project Inference Result: ${JSON.stringify(result, null, 2)}`);
+            if (cancellationToken.isCancellationRequested) {
+                this.log('[Background] 分析被用户取消', 'info');
+                return;
+            }
+            // ✅ 阶段完成：记录详细结果
+            this.log('[Background] [阶段 2] ✅ 项目推理完成', 'info');
+            this.log(`[Background] [结果] 项目类型: ${result.projectType}`, 'info');
+            this.log(`[Background] [结果] 源根目录: ${JSON.stringify(result.sourceRoots)}`, 'info');
+            this.log(`[Background] [结果] 检测详情: ${JSON.stringify(result.detectionDetails)}`, 'info');
+            this.log(`[Background] ========== 后台分析完成 ==========`, 'info');
+            // ✅ 更新 UI 状态为就绪
+            this.updateUIState(PluginState.READY, '项目分析完成，可以开始检测变更');
+            // 发送结果到 UI
             if (this._view) {
                 this._view.postMessage({
                     command: 'projectInferenceResult',
                     data: result
                 });
             }
+            // 清理取消令牌
+            if (this.backgroundTaskCancellation) {
+                this.backgroundTaskCancellation.dispose();
+                this.backgroundTaskCancellation = null;
+            }
         }
         catch (error) {
-            this.log(`Refresh failed: ${error}`, 'error');
-            this._view?.postMessage({ command: 'error', text: String(error) });
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.log(`[Background] ❌ 分析失败: ${errorMsg}`, 'error');
+            this.log(`[Background] [错误堆栈] ${error instanceof Error ? error.stack : 'N/A'}`, 'error');
+            this.updateUIState(PluginState.ERROR, `分析失败: ${errorMsg}`);
         }
+    }
+    /**
+     * 保持向后兼容的 refresh 方法
+     */
+    async refresh() {
+        this.startBackgroundAnalysis();
     }
     _getHtmlForWebview(webview) {
         return `<!DOCTYPE html>
@@ -177,13 +281,14 @@ class DiffSense {
         <div id="status-container" class="status-container">
             <div class="status-step completed">
                 <span class="status-icon">✅</span>
-                <span>DiffSense Activated</span>
+                <span>DiffSense 已激活</span>
             </div>
-            <div class="status-step active" id="init-step">
-                <span class="status-icon"><div class="spinner"></div></span>
-                <span id="status-text">Initializing Project...</span>
+            <div class="status-step" id="state-step">
+                <span class="status-icon" id="state-icon">⏳</span>
+                <span id="status-text">等待初始化...</span>
             </div>
-            <div id="detailed-status" class="sub-status">Waiting for background tasks...</div>
+            <div id="detailed-status" class="sub-status">准备开始分析...</div>
+            <div id="progress-status" class="sub-status" style="display: none;"></div>
         </div>
 
         <div id="content" class="hidden">
@@ -194,23 +299,72 @@ class DiffSense {
             const vscode = acquireVsCodeApi();
             const statusText = document.getElementById('status-text');
             const detailedStatus = document.getElementById('detailed-status');
-            const initStep = document.getElementById('init-step');
+            const progressStatus = document.getElementById('progress-status');
+            const stateStep = document.getElementById('state-step');
+            const stateIcon = document.getElementById('state-icon');
             const content = document.getElementById('content');
             const statusContainer = document.getElementById('status-container');
             const resultData = document.getElementById('result-data');
+
+            // ✅ 状态驱动 UI 更新
+            function updateState(state, message, details) {
+                stateStep.classList.remove('active', 'completed');
+                
+                switch(state) {
+                    case 'idle':
+                        stateIcon.innerHTML = '⏳';
+                        stateStep.classList.add('active');
+                        statusText.innerText = message || '等待开始...';
+                        detailedStatus.innerText = details || '准备分析项目';
+                        progressStatus.style.display = 'none';
+                        break;
+                    case 'scanning':
+                        stateIcon.innerHTML = '<div class="spinner"></div>';
+                        stateStep.classList.add('active');
+                        statusText.innerText = message || '正在扫描文件...';
+                        detailedStatus.innerText = details || '扫描项目文件';
+                        progressStatus.style.display = 'block';
+                        break;
+                    case 'analyzing':
+                        stateIcon.innerHTML = '<div class="spinner"></div>';
+                        stateStep.classList.add('active');
+                        statusText.innerText = message || '正在分析项目...';
+                        detailedStatus.innerText = details || '分析项目结构';
+                        progressStatus.style.display = 'block';
+                        break;
+                    case 'ready':
+                        stateIcon.innerHTML = '✅';
+                        stateStep.classList.add('completed');
+                        statusText.innerText = message || '分析完成';
+                        detailedStatus.innerText = details || '可以开始检测变更';
+                        progressStatus.style.display = 'none';
+                        break;
+                    case 'error':
+                        stateIcon.innerHTML = '❌';
+                        stateStep.classList.add('active');
+                        statusText.innerText = '错误';
+                        detailedStatus.innerText = message || '发生错误';
+                        detailedStatus.style.color = 'var(--vscode-errorForeground)';
+                        progressStatus.style.display = 'none';
+                        break;
+                }
+            }
 
             window.addEventListener('message', event => {
                 const message = event.data;
 
                 switch (message.command) {
-                    case 'statusUpdate':
-                        detailedStatus.innerText = message.text;
+                    case 'stateUpdate':
+                        // ✅ 状态驱动更新
+                        updateState(message.state, message.message, message.details);
+                        break;
+                    case 'progressUpdate':
+                        // ✅ 进度更新
+                        progressStatus.innerText = message.message;
+                        progressStatus.style.display = 'block';
                         break;
                     case 'projectInferenceResult':
-                        initStep.classList.remove('active');
-                        initStep.classList.add('completed');
-                        initStep.innerHTML = '<span class="status-icon">✅</span><span>Analysis Complete</span>';
-                        detailedStatus.innerText = 'Ready to detect changes.';
+                        updateState('ready', '分析完成', '项目结构已识别');
                         
                         setTimeout(() => {
                             statusContainer.style.display = 'none';
@@ -219,14 +373,15 @@ class DiffSense {
                         }, 1000);
                         break;
                     case 'error':
-                        initStep.innerHTML = '<span class="status-icon">❌</span><span>Error</span>';
-                        detailedStatus.innerText = message.text;
-                        detailedStatus.style.color = 'var(--vscode-errorForeground)';
+                        updateState('error', message.text, '请查看输出面板获取详细信息');
                         break;
                 }
             });
-            // Signal ready
-            vscode.postMessage({ command: 'refresh' });
+            
+            // ✅ UI 就绪后立即请求分析（不阻塞）
+            setTimeout(() => {
+                vscode.postMessage({ command: 'refresh' });
+            }, 100);
         </script>
     </body>
     </html>`;
