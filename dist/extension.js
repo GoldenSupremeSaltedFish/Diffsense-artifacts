@@ -93,73 +93,105 @@ class DiffSense {
         this.updateUIState(PluginState.IDLE, 'DiffSense 已激活，准备分析项目...');
         // ✅ Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
-            this.log(`[Message] 收到前端消息: ${data.command}`, 'info');
-            switch (data.command) {
-                case 'refresh':
-                    this.startBackgroundAnalysis();
-                    break;
-                case 'openLog':
-                    this.showOutput();
-                    break;
-                case 'cancelAnalysis':
-                    this.cancelBackgroundAnalysis();
-                    break;
-                case 'analyze':
-                    // ✅ 处理分析请求
-                    this.log('[Analysis] 收到分析请求', 'info');
-                    this.handleAnalysisRequest(data.data).catch((error) => {
-                        this.log(`[Analysis] 分析请求处理失败: ${error}`, 'error');
-                        this._view?.postMessage({
-                            command: 'analysisError',
-                            error: error instanceof Error ? error.message : String(error)
+            this.log(`[Message] ========== 收到前端消息 ==========`, 'info');
+            this.log(`[Message] 命令: ${data.command}`, 'info');
+            this.log(`[Message] 数据: ${JSON.stringify(data, null, 2)}`, 'info');
+            try {
+                switch (data.command) {
+                    case 'refresh':
+                        this.log('[Message] 处理 refresh 命令', 'info');
+                        this.startBackgroundAnalysis();
+                        break;
+                    case 'openLog':
+                        this.log('[Message] 处理 openLog 命令', 'info');
+                        this.showOutput();
+                        break;
+                    case 'cancelAnalysis':
+                        this.log('[Message] 处理 cancelAnalysis 命令', 'info');
+                        this.cancelBackgroundAnalysis();
+                        break;
+                    case 'analyze':
+                        // ✅ 处理分析请求
+                        this.log('[Message] ========== 开始处理分析请求 ==========', 'info');
+                        this.log(`[Message] 分析数据: ${JSON.stringify(data.data, null, 2)}`, 'info');
+                        if (!data.data) {
+                            this.log('[Message] ❌ 错误：分析数据为空', 'error');
+                            this._view?.postMessage({
+                                command: 'analysisError',
+                                error: '分析数据为空'
+                            });
+                            return;
+                        }
+                        // 使用 try-catch 确保错误被捕获
+                        try {
+                            await this.handleAnalysisRequest(data.data);
+                            this.log('[Message] ✅ 分析请求处理完成', 'info');
+                        }
+                        catch (error) {
+                            const errorMsg = error instanceof Error ? error.message : String(error);
+                            const errorStack = error instanceof Error ? error.stack : 'N/A';
+                            this.log(`[Message] ❌ 分析请求处理失败: ${errorMsg}`, 'error');
+                            this.log(`[Message] 错误堆栈: ${errorStack}`, 'error');
+                            this._view?.postMessage({
+                                command: 'analysisError',
+                                error: errorMsg
+                            });
+                        }
+                        break;
+                    case 'getHotspotAnalysis':
+                        // ✅ 处理热点分析请求
+                        this.log('[Analysis] 收到热点分析请求', 'info');
+                        this.handleGetHotspotAnalysis(data.data).catch((error) => {
+                            this.log(`[Analysis] 热点分析失败: ${error}`, 'error');
+                            this._view?.postMessage({
+                                command: 'hotspotAnalysisError',
+                                error: error instanceof Error ? error.message : String(error)
+                            });
                         });
-                    });
-                    break;
-                case 'getHotspotAnalysis':
-                    // ✅ 处理热点分析请求
-                    this.log('[Analysis] 收到热点分析请求', 'info');
-                    this.handleGetHotspotAnalysis(data.data).catch((error) => {
-                        this.log(`[Analysis] 热点分析失败: ${error}`, 'error');
-                        this._view?.postMessage({
-                            command: 'hotspotAnalysisError',
-                            error: error instanceof Error ? error.message : String(error)
+                        break;
+                    case 'detectRevert':
+                        // ✅ 处理组件回退检测
+                        this.log('[Analysis] 收到组件回退检测请求', 'info');
+                        this.handleDetectRevert(data.data).catch((error) => {
+                            this.log(`[Analysis] 组件回退检测失败: ${error}`, 'error');
+                            this._view?.postMessage({
+                                command: 'analysisError',
+                                error: error instanceof Error ? error.message : String(error)
+                            });
                         });
-                    });
-                    break;
-                case 'detectRevert':
-                    // ✅ 处理组件回退检测
-                    this.log('[Analysis] 收到组件回退检测请求', 'info');
-                    this.handleDetectRevert(data.data).catch((error) => {
-                        this.log(`[Analysis] 组件回退检测失败: ${error}`, 'error');
-                        this._view?.postMessage({
-                            command: 'analysisError',
-                            error: error instanceof Error ? error.message : String(error)
+                        break;
+                    case 'reportBug':
+                        // ✅ 处理 Bug 汇报
+                        this.log('[BugReport] 收到 Bug 汇报请求', 'info');
+                        this.handleReportBug(data.data).catch((error) => {
+                            this.log(`[BugReport] Bug 汇报处理失败: ${error}`, 'error');
+                            vscode.window.showErrorMessage(`Bug 汇报失败: ${error instanceof Error ? error.message : String(error)}`);
                         });
-                    });
-                    break;
-                case 'reportBug':
-                    // ✅ 处理 Bug 汇报
-                    this.log('[BugReport] 收到 Bug 汇报请求', 'info');
-                    this.handleReportBug(data.data).catch((error) => {
-                        this.log(`[BugReport] Bug 汇报处理失败: ${error}`, 'error');
-                        vscode.window.showErrorMessage(`Bug 汇报失败: ${error instanceof Error ? error.message : String(error)}`);
-                    });
-                    break;
-                case 'validateCommitIds':
-                    // ✅ 处理 Commit ID 验证
-                    this.log('[Validation] 收到 Commit ID 验证请求', 'info');
-                    this.handleValidateCommitIds(data.data).catch((error) => {
-                        this.log(`[Validation] Commit ID 验证失败: ${error}`, 'error');
-                        this._view?.postMessage({
-                            command: 'commitValidationResult',
-                            valid: false,
-                            error: error instanceof Error ? error.message : String(error)
+                        break;
+                    case 'validateCommitIds':
+                        // ✅ 处理 Commit ID 验证
+                        this.log('[Validation] 收到 Commit ID 验证请求', 'info');
+                        this.handleValidateCommitIds(data.data).catch((error) => {
+                            this.log(`[Validation] Commit ID 验证失败: ${error}`, 'error');
+                            this._view?.postMessage({
+                                command: 'commitValidationResult',
+                                valid: false,
+                                error: error instanceof Error ? error.message : String(error)
+                            });
                         });
-                    });
-                    break;
-                default:
-                    this.log(`[Message] 未知命令: ${data.command}`, 'warn');
+                        break;
+                    default:
+                        this.log(`[Message] ⚠️  未知命令: ${data.command}`, 'warn');
+                        this.log(`[Message] 完整消息数据: ${JSON.stringify(data, null, 2)}`, 'warn');
+                }
             }
+            catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                const errorStack = error instanceof Error ? error.stack : 'N/A';
+                this.log(`[Message] ❌ 消息处理异常: ${errorMsg}`, 'error');
+                this.log(`[Message] 错误堆栈: ${errorStack}`, 'error');
+            }
+            this.log(`[Message] ========== 消息处理完成 ==========`, 'info');
         });
         // ✅ 3. UI 显示后，立即启动后台任务（不阻塞）
         this.log('[Background] 调度后台分析任务...', 'info');
@@ -2238,8 +2270,15 @@ ${codeBlock(String(errorContext))}`;
      */
     async handleAnalysisRequest(data) {
         this.log('[Analysis] ========== 开始代码分析 ==========', 'info');
-        this.log(`[Analysis] 分析参数: ${JSON.stringify(data, null, 2)}`, 'info');
+        this.log(`[Analysis] 接收到的数据: ${JSON.stringify(data, null, 2)}`, 'info');
+        // ✅ 验证数据
+        if (!data) {
+            const errorMsg = '分析数据为空';
+            this.log(`[Analysis] ❌ ${errorMsg}`, 'error');
+            throw new Error(errorMsg);
+        }
         // ✅ 发送分析开始消息
+        this.log('[Analysis] 发送 analysisStarted 消息到前端', 'info');
         this._view?.postMessage({
             command: 'analysisStarted'
         });
