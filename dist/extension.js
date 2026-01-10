@@ -63,6 +63,11 @@ class DiffSense {
     context;
     currentState = PluginState.IDLE;
     backgroundTaskCancellation = null;
+    // ✅ 缓存数据，用于模式切换时恢复状态
+    _cachedBranches = [];
+    _cachedAnalysisResult = null;
+    _cachedProjectType = null;
+    _cachedProjectInference = null;
     constructor(context) {
         this.context = context;
         this._extensionUri = context.extensionUri;
@@ -333,15 +338,21 @@ class DiffSense {
             // ✅ 阶段完成：记录详细结果
             this.log('[Background] [阶段 2] ✅ 项目推理完成', 'info');
             this.log(`[Background] [结果] 项目类型: ${result.projectType}`, 'info');
+            // ✅ 缓存项目推理结果
+            this._cachedProjectInference = result;
             this.log(`[Background] [结果] 源根目录: ${JSON.stringify(result.sourceRoots)}`, 'info');
             this.log(`[Background] [结果] 检测详情: ${JSON.stringify(result.detectionDetails)}`, 'info');
             // ✅ 阶段 3: 检测项目类型和后端语言
             this.log('[Background] [阶段 3] 开始检测项目类型和后端语言...', 'info');
             const projectTypeInfo = await this.detectProjectType(rootPath, result);
+            // ✅ 缓存项目类型信息
+            this._cachedProjectType = projectTypeInfo;
             this.log(`[Background] [阶段 3] ✅ 项目类型检测完成: ${projectTypeInfo.projectType} (后端语言: ${projectTypeInfo.backendLanguage})`, 'info');
             // ✅ 阶段 4: 加载 Git 分支
             this.log('[Background] [阶段 4] 开始加载 Git 分支...', 'info');
             const branches = await this.loadGitBranches(rootPath);
+            // ✅ 缓存分支列表
+            this._cachedBranches = branches;
             this.log(`[Background] [阶段 4] ✅ 加载完成，找到 ${branches.length} 个分支`, 'info');
             this.log(`[Background] ========== 后台分析完成 ==========`, 'info');
             // ✅ 更新 UI 状态为就绪
@@ -2275,10 +2286,13 @@ ${codeBlock(String(errorContext))}`;
                 (0, child_process_1.execFile)('node', [mergeImpactPath, baseCommit, headCommit], {
                     cwd: repoPath,
                     timeout: 60000,
-                    maxBuffer: 1024 * 1024 * 5
+                    maxBuffer: 1024 * 1024 * 50 // 50MB
                 }, (error, stdout, stderr) => {
                     if (error) {
                         console.error('mergeImpact 执行错误:', error);
+                        if (error.message.includes('maxBuffer')) {
+                            console.error('⚠️ stdout maxBuffer length exceeded in mergeImpact');
+                        }
                         console.error('stderr:', stderr);
                         reject(error);
                     }
@@ -2381,6 +2395,7 @@ ${codeBlock(String(errorContext))}`;
             const rawBranch = data.branch || 'HEAD';
             const branch = this.cleanBranchName(rawBranch) || 'HEAD';
             const range = data.range || 'Last 3 commits';
+            const analysisMode = data.analysisMode || 'unknown'; // 获取分析模式
             this.log(`[Analysis] 工作区: ${repoPath}`, 'info');
             this.log(`[Analysis] 分析类型: ${analysisType}`, 'info');
             this.log(`[Analysis] 分支: ${branch} (原始: ${rawBranch})`, 'info');
@@ -2417,6 +2432,8 @@ ${codeBlock(String(errorContext))}`;
                 throw new Error(`不支持的分析类型: ${analysisType}`);
             }
             this.log(`[Analysis] ✅ 分析完成，结果包含 ${result.commits?.length || 0} 个提交`, 'info');
+            // ✅ 缓存分析结果
+            this._cachedAnalysisResult = result.commits || result;
             // ✅ 发送分析结果
             this._view?.postMessage({
                 command: 'analysisResult',
@@ -2747,10 +2764,13 @@ ${codeBlock(String(errorContext))}`;
             const childProcess = (0, child_process_1.execFile)('java', args, {
                 cwd: repoPath,
                 timeout: 300000,
-                maxBuffer: 1024 * 1024 * 10
+                maxBuffer: 1024 * 1024 * 50 // 50MB
             }, (error, stdout, stderr) => {
                 if (error) {
                     this.log(`[Analysis] ❌ Java 分析器执行错误: ${error.message}`, 'error');
+                    if (error.message.includes('maxBuffer')) {
+                        this.log('[Analysis] ⚠️ stdout maxBuffer length exceeded. Please try reducing the analysis scope.', 'error');
+                    }
                     if (error.code) {
                         this.log(`[Analysis] 错误代码: ${error.code}`, 'error');
                     }
