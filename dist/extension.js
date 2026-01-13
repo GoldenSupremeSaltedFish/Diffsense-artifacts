@@ -233,7 +233,7 @@ class DiffSense {
                         if (this._cachedAnalysisResult) {
                             this.log('[Message] 恢复缓存的分析结果', 'info');
                             this._view?.postMessage({
-                                command: 'analysisCompleted',
+                                command: 'restoredAnalysisResults',
                                 data: this._cachedAnalysisResult
                             });
                         }
@@ -2783,7 +2783,7 @@ ${codeBlock(String(errorContext))}`;
         const validBranch = this.isValidBranchName(cleanedBranch) ? cleanedBranch : 'HEAD';
         const args = [
             '-jar', javaAnalyzerPath,
-            'inspect', // 使用 inspect 子命令
+            // 'inspect',  // JAR 包主类已默认为 inspect 命令，无需显式传递子命令
             '--branch', validBranch,
             '--output', 'json'
         ];

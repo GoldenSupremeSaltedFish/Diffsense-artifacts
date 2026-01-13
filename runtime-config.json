@@ -1,7 +1,7 @@
 {
   "version": "0.1.15",
-  "buildTime": "2026-01-12T16:04:03Z",
-  "commit": "7e88003229f962691ffb54daddb6fae070b1466d",
+  "buildTime": "2026-01-13T10:12:52Z",
+  "commit": "92d5664f4ea91f3a9c35b1ae8d4361e68411b78e",
   "branch": "release/2.1.2",
   "isProduction": true,
   "debugMode": false,
